@@ -8,6 +8,9 @@ const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
 const SYSTEM_INSTRUCTION = `Eres el asistente de miservicio.ar. Tu función es recibir un pedido por WhatsApp y extraer los datos en formato JSON estricto. Categorías válidas: Plomería, Electricidad, Reparación de Electrodomésticos, Limpieza, Climatización. Si el mensaje no es un pedido, responde { "error": "not_a_service" }. Si es un pedido, responde: { "category": "string", "description": "string", "urgency": "low"|"medium"|"high" }. Responde únicamente con el JSON, sin texto adicional.`;
 
 /**
+ * Flujo actual del bot: Recibe mensaje → Llama a Gemini → Loguea el resultado.
+ * No responde por WhatsApp. Si Gemini devuelve 404, el proceso termina ahí.
+ *
  * Analiza un mensaje de texto con Gemini y extrae categoría, descripción y urgencia si es un pedido.
  * @param {string} text - Mensaje entrante (ej. desde WhatsApp)
  * @returns {Promise<{ category?: string, description?: string, urgency?: string, error?: string }>}
@@ -22,13 +25,9 @@ async function analyzeMessage(text) {
     }
 
     try {
-        // Usar versión estable; si persiste 404, cambiar a "gemini-pro"
-        const model = genAI.getGenerativeModel({
-            model: 'gemini-1.5-flash-latest',
-            systemInstruction: SYSTEM_INSTRUCTION
-        });
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
 
-        const result = await model.generateContent(text);
+        const result = await model.generateContent(SYSTEM_INSTRUCTION + '\n\nMensaje a analizar: ' + text);
         const response = result.response;
         const output = response.text().trim();
 

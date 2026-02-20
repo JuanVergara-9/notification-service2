@@ -63,8 +63,8 @@ router.post('/webhook', async (req, res) => {
             const mensajeAEnviar = `¡Hola! Entendí tu pedido. Estoy buscando los mejores profesionales en ${result.category} para ayudarte con: ${result.description}.`;
             
             try {
-                await sendWhatsAppText(normalizedFrom, mensajeAEnviar);
-                console.log('[Webhook] Respuesta enviada a WhatsApp a:', normalizedFrom);
+                await sendWhatsAppText(from, mensajeAEnviar);
+                console.log('[Webhook] Respuesta enviada a WhatsApp a:', from);
             } catch (sendErr) {
                 console.error('[Webhook] Error enviando respuesta a WhatsApp:', sendErr.message);
             }

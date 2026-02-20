@@ -2,6 +2,63 @@
 
 const router = require('express').Router();
 const { sendWhatsAppText } = require('../services/whatsapp.service');
+const { analyzeMessage } = require('../services/ai.service');
+
+const WEBHOOK_VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN || '';
+const WEBHOOK_ALLOWED_NUMBER = process.env.WEBHOOK_ALLOWED_NUMBER || ''; // Número con código de país (ej. 5492604123456)
+
+/**
+ * GET /webhook - Verificación del webhook por Meta (WhatsApp Business API).
+ * Meta envía hub.mode, hub.verify_token, hub.challenge. Validamos el token y devolvemos el challenge.
+ */
+router.get('/webhook', (req, res) => {
+    const mode = req.query['hub.mode'];
+    const token = req.query['hub.verify_token'];
+    const challenge = req.query['hub.challenge'];
+
+    if (mode === 'subscribe' && token === WEBHOOK_VERIFY_TOKEN) {
+        console.log('[Webhook] Verificación exitosa.');
+        return res.status(200).send(challenge);
+    }
+    console.log('[Webhook] Verificación rechazada (token inválido o modo incorrecto).');
+    res.status(403).send('Forbidden');
+});
+
+/**
+ * POST /webhook - Recepción de mensajes entrantes de WhatsApp.
+ * Solo se procesa si el remitente está en la lista permitida (WEBHOOK_ALLOWED_NUMBER).
+ */
+router.post('/webhook', async (req, res) => {
+    // Meta exige respuesta 200 rápido; procesamos después
+    res.sendStatus(200);
+
+    try {
+        const body = req.body;
+        const value = body?.entry?.[0]?.changes?.[0]?.value;
+        const messages = value?.messages;
+        if (!messages || messages.length === 0) {
+            return;
+        }
+
+        const first = messages[0];
+        const from = first.from;
+        const text = (first.type === 'text' && first.text?.body) ? first.text.body : '';
+
+        console.log('[Webhook] Mensaje recibido.', { from, textLength: text.length });
+
+        const allowedNormalized = String(WEBHOOK_ALLOWED_NUMBER).replace(/\D/g, '');
+        const fromNormalized = String(from).replace(/\D/g, '');
+        if (!allowedNormalized || fromNormalized !== allowedNormalized) {
+            console.log('[Webhook] Remitente no autorizado, no se procesa.');
+            return;
+        }
+
+        const result = await analyzeMessage(text);
+        console.log('[Gemini] Análisis completado.', JSON.stringify(result));
+    } catch (err) {
+        console.error('[Webhook] Error procesando POST:', err.message);
+    }
+});
 
 /**
  * POST /send-whatsapp

@@ -1,9 +1,9 @@
 'use strict';
 
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { createJSClient } = require('@google/genai');
 
 const apiKey = process.env.GEMINI_API_KEY;
-const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
+const client = apiKey ? createJSClient({ apiKey }) : null;
 
 const SYSTEM_INSTRUCTION = `Eres el asistente de miservicio.ar. Tu función es recibir un pedido por WhatsApp y extraer los datos en formato JSON estricto. Categorías válidas: Plomería, Electricidad, Reparación de Electrodomésticos, Limpieza, Climatización. Si el mensaje no es un pedido, responde { "error": "not_a_service" }. Si es un pedido, responde: { "category": "string", "description": "string", "urgency": "low"|"medium"|"high" }. Responde únicamente con el JSON, sin texto adicional.`;
 
@@ -16,7 +16,7 @@ const SYSTEM_INSTRUCTION = `Eres el asistente de miservicio.ar. Tu función es r
  * @returns {Promise<{ category?: string, description?: string, urgency?: string, error?: string }>}
  */
 async function analyzeMessage(text) {
-    if (!genAI) {
+    if (!client) {
         console.error('[Gemini] GEMINI_API_KEY no configurada.');
         return { error: 'ai_not_configured' };
     }
@@ -25,10 +25,11 @@ async function analyzeMessage(text) {
     }
 
     try {
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const response = await client.models.generateContent({
+            model: 'gemini-2.0-flash',
+            contents: SYSTEM_INSTRUCTION + '\n\nMensaje a analizar: ' + text
+        });
 
-        const result = await model.generateContent(SYSTEM_INSTRUCTION + '\n\nMensaje a analizar: ' + text);
-        const response = result.response;
         const output = response.text().trim();
 
         // Intentar extraer JSON (puede venir envuelto en ```json ... ```)

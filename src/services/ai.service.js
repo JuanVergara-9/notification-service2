@@ -30,7 +30,7 @@ async function analyzeMessage(text) {
             contents: SYSTEM_INSTRUCTION + '\n\nMensaje a analizar: ' + text
         });
 
-        const output = response.text().trim();
+        const output = response.text.trim();
 
         // Intentar extraer JSON (puede venir envuelto en ```json ... ```)
         let jsonStr = output;

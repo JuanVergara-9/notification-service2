@@ -26,7 +26,7 @@ async function analyzeMessage(text) {
 
     try {
         const response = await client.models.generateContent({
-            model: 'gemini-1.5-flash',
+            model: 'gemini-1.5-pro',
             contents: SYSTEM_INSTRUCTION + '\n\nMensaje a analizar: ' + text
         });
 

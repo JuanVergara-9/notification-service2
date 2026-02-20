@@ -22,8 +22,9 @@ async function analyzeMessage(text) {
     }
 
     try {
+        // Usar versión estable; si persiste 404, cambiar a "gemini-pro"
         const model = genAI.getGenerativeModel({
-            model: 'gemini-1.5-flash',
+            model: 'gemini-1.5-flash-latest',
             systemInstruction: SYSTEM_INSTRUCTION
         });
 

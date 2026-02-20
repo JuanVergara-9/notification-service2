@@ -5,7 +5,7 @@ const { sendWhatsAppText } = require('../services/whatsapp.service');
 const { analyzeMessage } = require('../services/ai.service');
 
 const WEBHOOK_VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN || '';
-const WEBHOOK_ALLOWED_NUMBER = process.env.WEBHOOK_ALLOWED_NUMBER || ''; // Número con código de país (ej. 5492604123456)
+const WEBHOOK_ALLOWED_NUMBER = process.env.WEBHOOK_ALLOWED_NUMBER || ''; // Número con código de país (ej. 5492604800958)
 
 /**
  * GET /webhook - Verificación del webhook por Meta (WhatsApp Business API).
@@ -44,14 +44,10 @@ router.post('/webhook', async (req, res) => {
         const from = first.from;
         const text = (first.type === 'text' && first.text?.body) ? first.text.body : '';
 
-        // Normalizar número de Argentina (Meta envía 549, pero solemos usar 54 en la configuración)
-        const normalizedFrom = from.startsWith('549') ? '54' + from.slice(3) : from;
+        console.log('[Webhook] Mensaje recibido.', { from, textLength: text.length });
 
-        console.log('[Webhook] Mensaje recibido.', { from, normalizedFrom, textLength: text.length });
-
-        const allowedNormalized = String(WEBHOOK_ALLOWED_NUMBER).replace(/\D/g, '');
-        if (!allowedNormalized || normalizedFrom !== allowedNormalized) {
-            console.log('[Webhook] Remitente no autorizado, no se procesa.', { normalizedFrom, allowedNormalized });
+        if (!WEBHOOK_ALLOWED_NUMBER || from !== WEBHOOK_ALLOWED_NUMBER) {
+            console.log('[Webhook] Remitente no autorizado, no se procesa.', { from, allowed: WEBHOOK_ALLOWED_NUMBER });
             return;
         }
 
@@ -63,7 +59,7 @@ router.post('/webhook', async (req, res) => {
             const mensajeAEnviar = `¡Hola! Entendí tu pedido. Estoy buscando los mejores profesionales en ${result.category} para ayudarte con: ${result.description}.`;
             
             try {
-                await sendWhatsAppText(normalizedFrom, mensajeAEnviar);
+                await sendWhatsAppText(from, mensajeAEnviar);
                 console.log('[Webhook] Respuesta enviada a WhatsApp a:', from);
             } catch (sendErr) {
                 console.error('[Webhook] Error enviando respuesta a WhatsApp:', sendErr.message);

@@ -61,8 +61,11 @@ router.post('/webhook', async (req, res) => {
             const mensajeAEnviar = `¡Hola! Entendí tu pedido. Estoy buscando los mejores profesionales en ${result.category} para ayudarte con: ${result.description}.`;
             
             try {
-                await sendWhatsAppText(from, mensajeAEnviar);
-                console.log('[Webhook] Respuesta enviada a WhatsApp.');
+                // Normalizar número de Argentina (Meta espera 54 + número, sin el 9 que viene en el webhook)
+                const recipientNumber = from.startsWith('549') ? '54' + from.slice(3) : from;
+                
+                await sendWhatsAppText(recipientNumber, mensajeAEnviar);
+                console.log('[Webhook] Respuesta enviada a WhatsApp a:', recipientNumber);
             } catch (sendErr) {
                 console.error('[Webhook] Error enviando respuesta a WhatsApp:', sendErr.message);
             }

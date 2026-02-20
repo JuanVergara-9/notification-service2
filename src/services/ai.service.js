@@ -5,6 +5,9 @@ const { GoogleGenAI } = require('@google/genai');
 const apiKey = process.env.GEMINI_API_KEY;
 const client = apiKey ? new GoogleGenAI({ apiKey }) : null;
 
+// Almacenamiento temporal de sesiones en memoria
+const sessions = new Map();
+
 const SYSTEM_INSTRUCTION = `Eres el recepcionista virtual de "miservicio", un marketplace de oficios. Tu objetivo es entender qué necesita el cliente y asegurarte de tener 4 datos clave: category, description, zone (barrio/ciudad), y urgency (alta, media, o baja).
 
 Tu respuesta DEBE ser SIEMPRE un JSON válido con esta estructura exacta:
@@ -25,13 +28,12 @@ Reglas de diálogo:
 Responde únicamente con el JSON, sin texto adicional.`;
 
 /**
- * Flujo actual del bot: Recibe mensaje → Llama a Gemini → Loguea el resultado → Responde por WhatsApp.
- *
- * Analiza un mensaje de texto con Gemini para recolectar datos del pedido.
- * @param {string} text - Mensaje entrante (ej. desde WhatsApp)
- * @returns {Promise<{ isComplete: boolean, extractedData: object, replyToClient: string, error?: string }>}
+ * Analiza un mensaje de texto con Gemini manteniendo el contexto de la conversación.
+ * @param {string} from - Número del usuario (ID de sesión)
+ * @param {string} text - Mensaje entrante
+ * @returns {Promise<object>}
  */
-async function analyzeMessage(text) {
+async function analyzeMessage(from, text) {
     if (!client) {
         console.error('[Gemini] GEMINI_API_KEY no configurada.');
         return { error: 'ai_not_configured' };
@@ -40,22 +42,45 @@ async function analyzeMessage(text) {
         return { error: 'not_a_service' };
     }
 
+    // Obtener o crear el historial de la sesión
+    if (!sessions.has(from)) {
+        sessions.set(from, []);
+    }
+    const history = sessions.get(from);
+
+    // Agregar el mensaje actual al historial
+    history.push({ role: 'user', parts: [{ text }] });
+
     try {
         const response = await client.models.generateContent({
             model: 'gemini-2.5-flash',
-            contents: SYSTEM_INSTRUCTION + '\n\nMensaje a analizar: ' + text
+            contents: [
+                { role: 'user', parts: [{ text: SYSTEM_INSTRUCTION }] },
+                ...history
+            ]
         });
 
         const output = response.text.trim();
 
-        // Intentar extraer JSON (puede venir envuelto en ```json ... ```)
+        // Intentar extraer JSON
         let jsonStr = output;
         const codeBlock = output.match(/```(?:json)?\s*([\s\S]*?)```/);
         if (codeBlock) {
             jsonStr = codeBlock[1].trim();
         }
+        
         const parsed = JSON.parse(jsonStr);
-        console.log('[Gemini] Análisis completado.');
+
+        // Si el ticket está completo, eliminamos la sesión para el próximo pedido
+        if (parsed.isComplete) {
+            console.log(`[Gemini] Ticket completado para ${from}. Limpiando sesión.`);
+            sessions.delete(from);
+        } else {
+            // Si no está completo, guardamos la respuesta del modelo en el historial para mantener el contexto
+            history.push({ role: 'model', parts: [{ text: output }] });
+        }
+
+        console.log('[Gemini] Análisis con memoria completado.');
         return parsed;
     } catch (err) {
         console.error('[Gemini] Error en analyzeMessage:', err.message);

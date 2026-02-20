@@ -51,7 +51,7 @@ router.post('/webhook', async (req, res) => {
             return;
         }
 
-        const result = await analyzeMessage(text);
+        const result = await analyzeMessage(from, text);
         console.log('[Gemini] Análisis completado.', JSON.stringify(result));
 
         // Fase 2: Responder al usuario por WhatsApp

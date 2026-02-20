@@ -44,12 +44,14 @@ router.post('/webhook', async (req, res) => {
         const from = first.from;
         const text = (first.type === 'text' && first.text?.body) ? first.text.body : '';
 
-        console.log('[Webhook] Mensaje recibido.', { from, textLength: text.length });
+        // Normalizar número de Argentina (Meta envía 549, pero solemos usar 54 en la configuración)
+        const normalizedFrom = from.startsWith('549') ? '54' + from.slice(3) : from;
+
+        console.log('[Webhook] Mensaje recibido.', { from, normalizedFrom, textLength: text.length });
 
         const allowedNormalized = String(WEBHOOK_ALLOWED_NUMBER).replace(/\D/g, '');
-        const fromNormalized = String(from).replace(/\D/g, '');
-        if (!allowedNormalized || fromNormalized !== allowedNormalized) {
-            console.log('[Webhook] Remitente no autorizado, no se procesa.');
+        if (!allowedNormalized || normalizedFrom !== allowedNormalized) {
+            console.log('[Webhook] Remitente no autorizado, no se procesa.', { normalizedFrom, allowedNormalized });
             return;
         }
 
@@ -61,11 +63,8 @@ router.post('/webhook', async (req, res) => {
             const mensajeAEnviar = `¡Hola! Entendí tu pedido. Estoy buscando los mejores profesionales en ${result.category} para ayudarte con: ${result.description}.`;
             
             try {
-                // Normalizar número de Argentina (Meta espera 54 + número, sin el 9 que viene en el webhook)
-                const recipientNumber = from.startsWith('549') ? '54' + from.slice(3) : from;
-                
-                await sendWhatsAppText(recipientNumber, mensajeAEnviar);
-                console.log('[Webhook] Respuesta enviada a WhatsApp a:', recipientNumber);
+                await sendWhatsAppText(normalizedFrom, mensajeAEnviar);
+                console.log('[Webhook] Respuesta enviada a WhatsApp a:', normalizedFrom);
             } catch (sendErr) {
                 console.error('[Webhook] Error enviando respuesta a WhatsApp:', sendErr.message);
             }

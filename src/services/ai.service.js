@@ -25,7 +25,7 @@ async function analyzeMessage(text) {
     }
 
     try {
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+        const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
         const result = await model.generateContent(SYSTEM_INSTRUCTION + '\n\nMensaje a analizar: ' + text);
         const response = result.response;

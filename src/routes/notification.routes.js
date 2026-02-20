@@ -55,6 +55,18 @@ router.post('/webhook', async (req, res) => {
 
         const result = await analyzeMessage(text);
         console.log('[Gemini] Análisis completado.', JSON.stringify(result));
+
+        // Fase 2: Responder al usuario por WhatsApp
+        if (result && !result.error) {
+            const mensajeAEnviar = `¡Hola! Entendí tu pedido. Estoy buscando los mejores profesionales en ${result.category} para ayudarte con: ${result.description}.`;
+            
+            try {
+                await sendWhatsAppText(from, mensajeAEnviar);
+                console.log('[Webhook] Respuesta enviada a WhatsApp.');
+            } catch (sendErr) {
+                console.error('[Webhook] Error enviando respuesta a WhatsApp:', sendErr.message);
+            }
+        }
     } catch (err) {
         console.error('[Webhook] Error procesando POST:', err.message);
     }

@@ -1,9 +1,9 @@
 'use strict';
 
-const { createJSClient } = require('@google/genai');
+const { GoogleGenAI } = require('@google/genai');
 
 const apiKey = process.env.GEMINI_API_KEY;
-const client = apiKey ? createJSClient({ apiKey }) : null;
+const client = apiKey ? new GoogleGenAI({ apiKey }) : null;
 
 const SYSTEM_INSTRUCTION = `Eres el asistente de miservicio.ar. Tu función es recibir un pedido por WhatsApp y extraer los datos en formato JSON estricto. Categorías válidas: Plomería, Electricidad, Reparación de Electrodomésticos, Limpieza, Climatización. Si el mensaje no es un pedido, responde { "error": "not_a_service" }. Si es un pedido, responde: { "category": "string", "description": "string", "urgency": "low"|"medium"|"high" }. Responde únicamente con el JSON, sin texto adicional.`;
 

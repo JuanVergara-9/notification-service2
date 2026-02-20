@@ -5,15 +5,31 @@ const { GoogleGenAI } = require('@google/genai');
 const apiKey = process.env.GEMINI_API_KEY;
 const client = apiKey ? new GoogleGenAI({ apiKey }) : null;
 
-const SYSTEM_INSTRUCTION = `Eres el asistente de miservicio.ar. Tu función es recibir un pedido por WhatsApp y extraer los datos en formato JSON estricto. Categorías válidas: Plomería, Electricidad, Reparación de Electrodomésticos, Limpieza, Climatización. Si el mensaje no es un pedido, responde { "error": "not_a_service" }. Si es un pedido, responde: { "category": "string", "description": "string", "urgency": "low"|"medium"|"high" }. Responde únicamente con el JSON, sin texto adicional.`;
+const SYSTEM_INSTRUCTION = `Eres el recepcionista virtual de "miservicio", un marketplace de oficios. Tu objetivo es entender qué necesita el cliente y asegurarte de tener 4 datos clave: category, description, zone (barrio/ciudad), y urgency (alta, media, o baja).
+
+Tu respuesta DEBE ser SIEMPRE un JSON válido con esta estructura exacta:
+{
+  "isComplete": boolean, 
+  "extractedData": {
+    "category": "string o null",
+    "description": "string o null",
+    "zone": "string o null",
+    "urgency": "alta, media, baja o null"
+  },
+  "replyToClient": "string"
+}
+
+Reglas de diálogo:
+1. Si el usuario no te da la zona o no queda clara la urgencia, isComplete debe ser false. En replyToClient debes redactar un mensaje natural, cortito y empático preguntando SOLO por el dato que falta (ej: "¡Hola! Te busco un técnico para la heladera. ¿En qué zona de la ciudad estás y qué tan urgente es?").
+2. Si ya tienes zona, descripción, categoría y urgencia, isComplete debe ser true, y en replyToClient redactas la confirmación final (ej: "¡Perfecto! Ya registré tu pedido para arreglar la heladera en el centro con urgencia media. Le estoy avisando a los técnicos.").
+Responde únicamente con el JSON, sin texto adicional.`;
 
 /**
- * Flujo actual del bot: Recibe mensaje → Llama a Gemini → Loguea el resultado.
- * No responde por WhatsApp. Si Gemini devuelve 404, el proceso termina ahí.
+ * Flujo actual del bot: Recibe mensaje → Llama a Gemini → Loguea el resultado → Responde por WhatsApp.
  *
- * Analiza un mensaje de texto con Gemini y extrae categoría, descripción y urgencia si es un pedido.
+ * Analiza un mensaje de texto con Gemini para recolectar datos del pedido.
  * @param {string} text - Mensaje entrante (ej. desde WhatsApp)
- * @returns {Promise<{ category?: string, description?: string, urgency?: string, error?: string }>}
+ * @returns {Promise<{ isComplete: boolean, extractedData: object, replyToClient: string, error?: string }>}
  */
 async function analyzeMessage(text) {
     if (!client) {

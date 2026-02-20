@@ -55,8 +55,8 @@ router.post('/webhook', async (req, res) => {
         console.log('[Gemini] Análisis completado.', JSON.stringify(result));
 
         // Fase 2: Responder al usuario por WhatsApp
-        if (result && !result.error) {
-            const mensajeAEnviar = `¡Hola! Entendí tu pedido. Estoy buscando los mejores profesionales en ${result.category} para ayudarte con: ${result.description}.`;
+        if (result && !result.error && result.replyToClient) {
+            const mensajeAEnviar = result.replyToClient;
             
             try {
                 // Normalización definitiva para Argentina: Meta API Cloud rechaza el '9' en envíos

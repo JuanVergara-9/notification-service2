@@ -3,6 +3,7 @@
 const router = require('express').Router();
 const { sendWhatsAppText } = require('../services/whatsapp.service');
 const { analyzeMessage } = require('../services/ai.service');
+const { saveTicket } = require('../services/db.service');
 
 const WEBHOOK_VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN || '';
 const WEBHOOK_ALLOWED_NUMBER = process.env.WEBHOOK_ALLOWED_NUMBER || ''; // Número con código de país (ej. 5492604800958)
@@ -53,6 +54,16 @@ router.post('/webhook', async (req, res) => {
 
         const result = await analyzeMessage(from, text);
         console.log('[Gemini] Análisis completado.', JSON.stringify(result));
+
+        // Fase 3.2: Persistencia en PostgreSQL si el ticket está completo
+        if (result && result.isComplete && result.extractedData) {
+            try {
+                console.log('[Webhook] Ticket completo detectado, guardando en DB...');
+                await saveTicket(from, result.extractedData);
+            } catch (dbErr) {
+                console.error('[Webhook] Error guardando ticket en DB (continuando proceso):', dbErr.message);
+            }
+        }
 
         // Fase 2: Responder al usuario por WhatsApp
         if (result && !result.error && result.replyToClient) {

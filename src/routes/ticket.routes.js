@@ -1,7 +1,27 @@
 'use strict';
 
 const router = require('express').Router();
-const { saveTicket } = require('../services/db.service');
+const { saveTicket, getTickets } = require('../services/db.service');
+
+/**
+ * GET /api/v1/tickets
+ * Obtiene la lista de tickets (Dashboard Admin).
+ */
+router.get('/tickets', async (req, res) => {
+    try {
+        const tickets = await getTickets();
+        res.json({
+            success: true,
+            data: tickets
+        });
+    } catch (err) {
+        console.error('[Tickets API] Error al obtener tickets:', err.message);
+        res.status(500).json({
+            success: false,
+            error: 'Error al obtener los tickets'
+        });
+    }
+});
 
 /**
  * POST /api/v1/tickets

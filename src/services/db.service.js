@@ -90,7 +90,27 @@ async function saveTicket(phone, ticketData, source) {
     }
 }
 
+/**
+ * Obtiene los últimos 100 tickets de la base de datos.
+ * @returns {Promise<Array>} Lista de tickets.
+ */
+async function getTickets() {
+    const query = `
+        SELECT * FROM tickets 
+        ORDER BY created_at DESC 
+        LIMIT 100;
+    `;
+    try {
+        const res = await pool.query(query);
+        return res.rows;
+    } catch (err) {
+        console.error('[DB] Error al obtener tickets:', err.message);
+        throw err;
+    }
+}
+
 module.exports = {
     saveTicket,
+    getTickets,
     pool
 };

@@ -13,7 +13,7 @@ const pool = new Pool({
     }
 });
 
-const CURRENT_TERMS_VERSION = 'v1.0';
+const CURRENT_TERMS_VERSION = 'v1.1';
 
 /**
  * Script de inicialización: Crea las tablas si no existen.
@@ -164,5 +164,6 @@ module.exports = {
     getUser,
     createUser,
     acceptTerms,
+    CURRENT_TERMS_VERSION,
     pool
 };

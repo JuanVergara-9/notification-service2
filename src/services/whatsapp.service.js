@@ -81,7 +81,7 @@ async function sendTermsInteractiveMessage(phoneNumber) {
                 interactive: {
                     type: "button",
                     body: { 
-                        text: "¡Hola! Para conectarte con los mejores profesionales, por favor confirmá que aceptás nuestros Términos y Condiciones (v1.0): www.miservicio.ar/legales" 
+                        text: "¡Hola! Para conectarte con los mejores profesionales, por favor confirmá que aceptás nuestros nuevos Términos y Políticas actualizados (v1.1): www.miservicio.ar/legal" 
                     },
                     action: {
                         buttons: [

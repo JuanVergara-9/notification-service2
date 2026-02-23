@@ -3,7 +3,7 @@
 const router = require('express').Router();
 const { sendWhatsAppText, sendTermsInteractiveMessage } = require('../services/whatsapp.service');
 const { analyzeMessage } = require('../services/ai.service');
-const { saveTicket, getUser, createUser, acceptTerms } = require('../services/db.service');
+const { saveTicket, getUser, createUser, acceptTerms, CURRENT_TERMS_VERSION } = require('../services/db.service');
 
 const WEBHOOK_VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN || '';
 const WEBHOOK_ALLOWED_NUMBER = process.env.WEBHOOK_ALLOWED_NUMBER || ''; // Número con código de país (ej. 5492604800958)
@@ -78,8 +78,8 @@ router.post('/webhook', async (req, res) => {
             user = await createUser(from);
         }
 
-        if (!user.terms_accepted) {
-            console.log('[Webhook] Usuario sin términos aceptados, enviando gatekeeper...', from);
+        if (!user.terms_accepted || user.terms_version !== CURRENT_TERMS_VERSION) {
+            console.log('[Webhook] Usuario sin términos aceptados o versión antigua, enviando gatekeeper...', { from, current: CURRENT_TERMS_VERSION, userVer: user.terms_version });
             await sendTermsInteractiveMessage(from);
             return; // Frena el flujo, NO pasa a Gemini
         }

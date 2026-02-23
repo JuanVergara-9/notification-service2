@@ -25,6 +25,7 @@ app.get('/readyz', (_req, res) => res.json({ ok: true }));
 
 // Rutas bajo /api/v1/notifications para que el gateway pueda proxy sin reescribir path
 app.use('/api/v1/notifications', require('./routes/notification.routes'));
+app.use('/api/v1', require('./routes/ticket.routes'));
 
 app.use((_req, res) => res.status(404).json({ error: 'Not found' }));
 

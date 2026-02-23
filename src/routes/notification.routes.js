@@ -59,7 +59,7 @@ router.post('/webhook', async (req, res) => {
         if (result && result.isComplete && result.extractedData) {
             try {
                 console.log('[Webhook] Ticket completo detectado, guardando en DB...');
-                await saveTicket(from, result.extractedData);
+                await saveTicket(from, result.extractedData, 'whatsapp');
             } catch (dbErr) {
                 console.error('[Webhook] Error guardando ticket en DB (continuando proceso):', dbErr.message);
             }

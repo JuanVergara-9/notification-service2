@@ -13,18 +13,10 @@ const pool = new Pool({
     }
 });
 
+const CURRENT_TERMS_VERSION = 'v1.0';
+
 /**
- * Script de inicialización: Crea la tabla 'tickets' si no existe.
- * Query SQL:
- * CREATE TABLE IF NOT EXISTS tickets (
- *   id SERIAL PRIMARY KEY,
- *   phone_number VARCHAR(20) NOT NULL,
- *   category VARCHAR(100),
- *   description TEXT,
- *   zone VARCHAR(100),
- *   urgency VARCHAR(50),
- *   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
- * );
+ * Script de inicialización: Crea las tablas si no existen.
  */
 const initDB = async () => {
     const query = `
@@ -39,12 +31,19 @@ const initDB = async () => {
             source VARCHAR(20),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+
+        CREATE TABLE IF NOT EXISTS users (
+            phone_number VARCHAR(50) PRIMARY KEY, 
+            terms_accepted BOOLEAN DEFAULT false, 
+            accepted_at TIMESTAMP, 
+            terms_version VARCHAR(20)
+        );
     `;
     try {
         await pool.query(query);
-        console.log('[DB] Tabla "tickets" verificada/creada con éxito.');
+        console.log('[DB] Tablas "tickets" y "users" verificadas/creadas con éxito.');
         
-        // Verificar si las columnas nuevas existen (por si la tabla ya estaba creada)
+        // Verificar si las columnas nuevas existen en tickets (por si la tabla ya estaba creada)
         const checkCols = `
             DO $$ 
             BEGIN 
@@ -64,6 +63,56 @@ const initDB = async () => {
 
 // Ejecutar inicialización al cargar el servicio
 initDB();
+
+/**
+ * Obtiene un usuario por su número de teléfono.
+ */
+async function getUser(phone) {
+    const query = 'SELECT * FROM users WHERE phone_number = $1;';
+    try {
+        const res = await pool.query(query, [phone]);
+        return res.rows[0] || null;
+    } catch (err) {
+        console.error('[DB] Error al obtener usuario:', err.message);
+        throw err;
+    }
+}
+
+/**
+ * Crea un usuario nuevo con términos no aceptados.
+ */
+async function createUser(phone) {
+    const query = 'INSERT INTO users (phone_number, terms_accepted) VALUES ($1, false) ON CONFLICT DO NOTHING RETURNING *;';
+    try {
+        const res = await pool.query(query, [phone]);
+        return res.rows[0];
+    } catch (err) {
+        console.error('[DB] Error al crear usuario:', err.message);
+        throw err;
+    }
+}
+
+/**
+ * Registra la aceptación de términos y condiciones (Audit Trail Fintech).
+ */
+async function acceptTerms(phone) {
+    const query = `
+        UPDATE users 
+        SET terms_accepted = true, 
+            accepted_at = CURRENT_TIMESTAMP, 
+            terms_version = $2 
+        WHERE phone_number = $1 
+        RETURNING *;
+    `;
+    try {
+        const res = await pool.query(query, [phone, CURRENT_TERMS_VERSION]);
+        console.log(`[DB] Términos aceptados para ${phone} (Versión: ${CURRENT_TERMS_VERSION})`);
+        return res.rows[0];
+    } catch (err) {
+        console.error('[DB] Error al aceptar términos:', err.message);
+        throw err;
+    }
+}
 
 /**
  * Guarda un ticket en la base de datos.
@@ -112,5 +161,8 @@ async function getTickets() {
 module.exports = {
     saveTicket,
     getTickets,
+    getUser,
+    createUser,
+    acceptTerms,
     pool
 };

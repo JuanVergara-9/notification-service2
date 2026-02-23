@@ -1,9 +1,9 @@
 'use strict';
 
 const router = require('express').Router();
-const { sendWhatsAppText } = require('../services/whatsapp.service');
+const { sendWhatsAppText, sendTermsInteractiveMessage } = require('../services/whatsapp.service');
 const { analyzeMessage } = require('../services/ai.service');
-const { saveTicket } = require('../services/db.service');
+const { saveTicket, getUser, createUser, acceptTerms } = require('../services/db.service');
 
 const WEBHOOK_VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN || '';
 const WEBHOOK_ALLOWED_NUMBER = process.env.WEBHOOK_ALLOWED_NUMBER || ''; // Número con código de país (ej. 5492604800958)
@@ -44,13 +44,47 @@ router.post('/webhook', async (req, res) => {
         const first = messages[0];
         const from = first.from;
         const text = (first.type === 'text' && first.text?.body) ? first.text.body : '';
+        const interactive = first.type === 'interactive' ? first.interactive : null;
 
-        console.log('[Webhook] Mensaje recibido.', { from, textLength: text.length });
+        console.log('[Webhook] Mensaje recibido.', { from, type: first.type });
 
         if (!WEBHOOK_ALLOWED_NUMBER || from !== WEBHOOK_ALLOWED_NUMBER) {
             console.log('[Webhook] Remitente no autorizado, no se procesa.', { from, allowed: WEBHOOK_ALLOWED_NUMBER });
             return;
         }
+
+        // --- FASE 3: Legal Gatekeeper Interceptor ---
+        
+        // 1. Manejo de respuestas interactivas (Botones)
+        if (interactive) {
+            const buttonId = interactive.button_reply?.id;
+            
+            if (buttonId === 'accept_terms') {
+                await acceptTerms(from);
+                await sendWhatsAppText(from, "¡Gracias! Ya estás registrado. ¿Qué servicio estás necesitando hoy?");
+                return; // Corta el flujo
+            }
+            
+            if (buttonId === 'reject_terms') {
+                await sendWhatsAppText(from, "Entendemos. Para usar miservicio es necesario aceptar las políticas. ¡Te esperamos cuando gustes!");
+                return; // Corta el flujo
+            }
+        }
+
+        // 2. Verificación de Usuario y Términos para mensajes normales
+        let user = await getUser(from);
+        if (!user) {
+            console.log('[Webhook] Usuario nuevo detectado, creando registro...', from);
+            user = await createUser(from);
+        }
+
+        if (!user.terms_accepted) {
+            console.log('[Webhook] Usuario sin términos aceptados, enviando gatekeeper...', from);
+            await sendTermsInteractiveMessage(from);
+            return; // Frena el flujo, NO pasa a Gemini
+        }
+
+        // --- FIN Legal Gatekeeper ---
 
         const result = await analyzeMessage(from, text);
         console.log('[Gemini] Análisis completado.', JSON.stringify(result));

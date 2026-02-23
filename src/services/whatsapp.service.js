@@ -59,4 +59,52 @@ async function sendWhatsAppText(phoneNumber, body) {
     }
 }
 
-module.exports = { sendWhatsAppText };
+/**
+ * Envía un mensaje interactivo con botones para la aceptación de Términos y Condiciones.
+ * @param {string} phoneNumber - Número del destinatario.
+ */
+async function sendTermsInteractiveMessage(phoneNumber) {
+    if (!token || !phoneNumberId) {
+        return { success: false, error: 'META_WA_TOKEN or META_WA_PHONE_NUMBER_ID not configured' };
+    }
+
+    const to = String(phoneNumber).replace(/\D/g, '');
+    
+    try {
+        const url = `${META_GRAPH_BASE}/${phoneNumberId}/messages`;
+        const { data } = await axios.post(
+            url,
+            {
+                messaging_product: "whatsapp",
+                to,
+                type: "interactive",
+                interactive: {
+                    type: "button",
+                    body: { 
+                        text: "¡Hola! Para conectarte con los mejores profesionales, por favor confirmá que aceptás nuestros Términos y Condiciones (v1.0): www.miservicio.ar/legales" 
+                    },
+                    action: {
+                        buttons: [
+                            { "type": "reply", "reply": { "id": "accept_terms", "title": "✅ Acepto" } },
+                            { "type": "reply", "reply": { "id": "reject_terms", "title": "❌ Cancelar" } }
+                        ]
+                    }
+                }
+            },
+            {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 15_000
+            }
+        );
+        return { success: true, messageId: data?.messages?.[0]?.id };
+    } catch (err) {
+        const message = err.response?.data?.error?.message || err.message;
+        console.error('[WhatsApp] interactive send error:', message);
+        return { success: false, error: message };
+    }
+}
+
+module.exports = { sendWhatsAppText, sendTermsInteractiveMessage };

@@ -158,9 +158,26 @@ async function getTickets() {
     }
 }
 
+/**
+ * Actualiza el estado de un ticket.
+ * @param {number} id - ID del ticket.
+ * @param {string} newStatus - Nuevo estado (ABIERTO, ASIGNADO, COMPLETADO, CANCELADO).
+ */
+async function updateTicketStatus(id, newStatus) {
+    const query = 'UPDATE tickets SET status = $1 WHERE id = $2 RETURNING *;';
+    try {
+        const res = await pool.query(query, [newStatus, id]);
+        return res.rows[0];
+    } catch (err) {
+        console.error('[DB] Error al actualizar estado del ticket:', err.message);
+        throw err;
+    }
+}
+
 module.exports = {
     saveTicket,
     getTickets,
+    updateTicketStatus,
     getUser,
     createUser,
     acceptTerms,

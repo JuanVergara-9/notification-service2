@@ -1,7 +1,7 @@
 'use strict';
 
 const router = require('express').Router();
-const { saveTicket, getTickets } = require('../services/db.service');
+const { saveTicket, getTickets, updateTicketStatus } = require('../services/db.service');
 
 /**
  * GET /api/v1/tickets
@@ -19,6 +19,45 @@ router.get('/tickets', async (req, res) => {
         res.status(500).json({
             success: false,
             error: 'Error al obtener los tickets'
+        });
+    }
+});
+
+/**
+ * PATCH /api/v1/tickets/:id/status
+ * Actualiza el estado de un ticket.
+ * Body: { status: 'NUEVO_ESTADO' }
+ */
+router.patch('/tickets/:id/status', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { status } = req.body;
+
+        if (!status) {
+            return res.status(400).json({
+                success: false,
+                error: 'El campo status es requerido.'
+            });
+        }
+
+        const updatedTicket = await updateTicketStatus(id, status);
+
+        if (!updatedTicket) {
+            return res.status(404).json({
+                success: false,
+                error: 'Ticket no encontrado.'
+            });
+        }
+
+        res.json({
+            success: true,
+            data: updatedTicket
+        });
+    } catch (err) {
+        console.error('[Tickets API] Error al actualizar ticket:', err.message);
+        res.status(500).json({
+            success: false,
+            error: 'Error interno al actualizar el ticket'
         });
     }
 });

@@ -27,9 +27,14 @@ async function sendWhatsAppText(phoneNumber, body) {
     }
 
     // Meta espera "to" solo con dígitos (código país + número, sin + ni espacios).
-    const to = String(phoneNumber).replace(/\D/g, '');
+    let to = String(phoneNumber).replace(/\D/g, '');
     if (!to) {
         return { success: false, error: 'Invalid phone number' };
+    }
+
+    // Normalización de prefijos argentinos: Meta Allowed List usa '54', pero webhooks envían '549'.
+    if (to.startsWith('549')) {
+        to = '54' + to.slice(3);
     }
 
     try {
@@ -68,7 +73,12 @@ async function sendTermsInteractiveMessage(phoneNumber) {
         return { success: false, error: 'META_WA_TOKEN or META_WA_PHONE_NUMBER_ID not configured' };
     }
 
-    const to = String(phoneNumber).replace(/\D/g, '');
+    let to = String(phoneNumber).replace(/\D/g, '');
+
+    // Normalización de prefijos argentinos: Meta Allowed List usa '54', pero webhooks envían '549'.
+    if (to.startsWith('549')) {
+        to = '54' + to.slice(3);
+    }
     
     try {
         const url = `${META_GRAPH_BASE}/${phoneNumberId}/messages`;

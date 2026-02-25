@@ -21,18 +21,20 @@ async function findMatchingProviders(ticketData) {
 
     try {
         // Limpiamos la URL base para evitar duplicados de /api/v1
-        const baseUrl = PROVIDER_SERVICE_URL.replace(/\/api\/v1\/?$/, '');
+        const baseUrl = PROVIDER_SERVICE_URL.replace(/\/api\/v1\/?$/, '').replace(/\/$/, '');
         const fullUrl = `${baseUrl}/api/v1/providers`;
+        
+        console.log(`[Matchmaking] Intentando petición a: ${fullUrl}`);
 
         const response = await axios.get(fullUrl, {
             params: {
                 city: zone,
-                categoryName: category, // Usamos el nuevo filtro por nombre
-                urgency: urgency, // Pasamos la urgencia para el ordenamiento en el servidor
+                categoryName: category,
+                urgency: urgency,
                 status: 'active',
-                limit: 10 // Pedimos algunos más para el filtrado final si fuera necesario
+                limit: 10
             },
-            timeout: 5000
+            timeout: 7000 // Aumentamos un poco el timeout
         });
 
         if (!response.data || !response.data.items) {

@@ -20,10 +20,11 @@ async function findMatchingProviders(ticketData) {
     console.log(`[Matchmaking] Buscando profesionales para: ${category} en ${zone} (Urgencia: ${urgency})`);
 
     try {
-        // Consultamos al provider-service usando sus filtros existentes
-        // El endpoint GET /api/v1/providers soporta city, status, isLicensed, etc.
-        // Nota: El matchmaking ideal sería por categorySlug, pero usaremos lo que tenemos.
-        const response = await axios.get(`${PROVIDER_SERVICE_URL}/api/v1/providers`, {
+        // Limpiamos la URL base para evitar duplicados de /api/v1
+        const baseUrl = PROVIDER_SERVICE_URL.replace(/\/api\/v1\/?$/, '');
+        const fullUrl = `${baseUrl}/api/v1/providers`;
+
+        const response = await axios.get(fullUrl, {
             params: {
                 city: zone,
                 categoryName: category, // Usamos el nuevo filtro por nombre

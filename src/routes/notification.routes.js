@@ -1,9 +1,10 @@
 'use strict';
 
 const router = require('express').Router();
-const { sendWhatsAppText, sendTermsInteractiveMessage } = require('../services/whatsapp.service');
+const { sendWhatsAppText, sendTermsInteractiveMessage, sendMatchResultsMessage } = require('../services/whatsapp.service');
 const { analyzeMessage } = require('../services/ai.service');
 const { saveTicket, getUser, createUser, acceptTerms, CURRENT_TERMS_VERSION } = require('../services/db.service');
+const { findMatchingProviders } = require('../services/matchmaking.service');
 
 const WEBHOOK_VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN || '';
 const WEBHOOK_ALLOWED_NUMBER = process.env.WEBHOOK_ALLOWED_NUMBER || ''; // Número con código de país (ej. 5492604800958)
@@ -93,9 +94,34 @@ router.post('/webhook', async (req, res) => {
         if (result && result.isComplete && result.extractedData) {
             try {
                 console.log('[Webhook] Ticket completo detectado, guardando en DB...');
-                await saveTicket(from, result.extractedData, 'whatsapp');
+                const ticketId = await saveTicket(from, result.extractedData, 'whatsapp');
+
+                // --- NUEVO: Motor de Matchmaking ---
+                console.log('[Webhook] Iniciando Matchmaking...');
+                const matches = await findMatchingProviders(result.extractedData);
+                
+                // Normalización definitiva para Argentina: Meta API Cloud rechaza el '9' en envíos
+                const metaRecipient = from.startsWith('549') ? '54' + from.slice(3) : from;
+
+                if (matches && matches.length > 0) {
+                    console.log(`[Matchmaking] ¡Éxito! Se encontraron ${matches.length} profesionales:`, 
+                        matches.map(m => `${m.name} (${m.is_pro ? 'PRO' : 'Normal'})`).join(', ')
+                    );
+                    
+                    // Enviar el Magic Link al usuario
+                    await sendMatchResultsMessage(metaRecipient, matches.length, ticketId);
+                    console.log('[Webhook] Magic Link enviado a WhatsApp.');
+                    return; // Importante: No enviar la respuesta genérica de Gemini si ya enviamos el link
+                } else {
+                    console.log('[Matchmaking] No se encontraron profesionales que coincidan exactamente.');
+                    const noMatchesMsg = "Ya registré tu pedido, pero en este momento no tengo profesionales disponibles en esa zona. Lo dejo abierto y te aviso apenas se conecte uno.";
+                    await sendWhatsAppText(metaRecipient, noMatchesMsg);
+                    return; // No enviar respuesta genérica
+                }
+                // --- FIN Matchmaking ---
+
             } catch (dbErr) {
-                console.error('[Webhook] Error guardando ticket en DB (continuando proceso):', dbErr.message);
+                console.error('[Webhook] Error en persistencia o matchmaking:', dbErr.message);
             }
         }
 

@@ -12,6 +12,7 @@ const axios = require('axios');
 const META_GRAPH_BASE = 'https://graph.facebook.com/v18.0';
 const token = process.env.META_WA_TOKEN;
 const phoneNumberId = process.env.META_WA_PHONE_NUMBER_ID;
+const FRONTEND_URL = process.env.FRONTEND_URL || 'https://miservicio.ar';
 
 /**
  * Envía un mensaje de texto al número indicado vía Meta WhatsApp Business API.
@@ -117,4 +118,17 @@ async function sendTermsInteractiveMessage(phoneNumber) {
     }
 }
 
-module.exports = { sendWhatsAppText, sendTermsInteractiveMessage };
+/**
+ * Envía un mensaje con los resultados del matchmaking y el link al frontend.
+ * @param {string} phoneNumber - Número del destinatario.
+ * @param {number} matchCount - Cantidad de profesionales encontrados.
+ * @param {number|string} ticketId - ID del ticket creado.
+ */
+async function sendMatchResultsMessage(phoneNumber, matchCount, ticketId) {
+    const message = `¡Buenas noticias! 🚀 Encontré ${matchCount} profesionales disponibles para tu pedido.\n\nTocá el siguiente enlace para ver sus perfiles, reputación y elegir al que más te guste:\n${FRONTEND_URL}/pedidos/match/${ticketId}\n\n¡Avisame por acá cuando hayas elegido!`;
+    
+    // Meta API Cloud previsualiza enlaces automáticamente si el mensaje es de texto simple
+    return sendWhatsAppText(phoneNumber, message);
+}
+
+module.exports = { sendWhatsAppText, sendTermsInteractiveMessage, sendMatchResultsMessage };

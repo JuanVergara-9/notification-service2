@@ -25,18 +25,20 @@ async function findMatchingProviders(ticketData) {
         // Nota: El matchmaking ideal sería por categorySlug, pero usaremos lo que tenemos.
         const response = await axios.get(`${PROVIDER_SERVICE_URL}/api/v1/providers`, {
             params: {
-                city: zone, // Mapeamos zone a city
+                city: zone,
+                categoryName: category, // Usamos el nuevo filtro por nombre
+                urgency: urgency, // Pasamos la urgencia para el ordenamiento en el servidor
                 status: 'active',
-                // Si la urgencia es alta, podríamos filtrar más adelante o pedir más datos
+                limit: 10 // Pedimos algunos más para el filtrado final si fuera necesario
             },
             timeout: 5000
         });
 
-        if (!response.data || !response.data.rows) {
+        if (!response.data || !response.data.items) {
             return [];
         }
 
-        let providers = response.data.rows;
+        let providers = response.data.items;
 
         // 1. Filtrar por categoría (ya que el endpoint actual puede no filtrar estrictamente por nombre de categoría si no es slug)
         // Si el provider-service no filtra por nombre exacto de categoría, lo hacemos aquí:

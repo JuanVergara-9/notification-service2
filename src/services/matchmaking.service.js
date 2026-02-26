@@ -54,6 +54,57 @@ function normalizeCategoryForApi(category) {
 }
 
 /**
+ * Normaliza la zona para búsqueda: "San Rafael Mendoza" → ciudad "San Rafael", provincia "Mendoza".
+ */
+function parseZone(zone) {
+  if (!zone || typeof zone !== 'string') return { city: '', province: '' };
+  const t = zone.trim();
+  const parts = t.split(',').map(s => s.trim()).filter(Boolean);
+  const city = parts[0] || t;
+  const province = parts[1] || '';
+  return { city, province };
+}
+
+function normalizeZoneForSearch(zone) {
+  return parseZone(zone).city || zone || '';
+}
+
+const DEFAULT_RADIUS_KM = 40;
+
+/**
+ * Obtiene coordenadas de la zona vía geolocation-service (opcional).
+ * Si GEOLOCATION_SERVICE_URL está definida, llama GET /api/v1/geo/geocode y devuelve { lat, lng }.
+ */
+async function geocodeZone(zone) {
+  const geoUrl = process.env.GEOLOCATION_SERVICE_URL && process.env.GEOLOCATION_SERVICE_URL.trim();
+  const gatewayUrl = process.env.API_GATEWAY_URL && process.env.API_GATEWAY_URL.trim();
+  const base = (geoUrl || gatewayUrl || '').replace(/\/$/, '');
+  if (!base) return null;
+
+  const { city, province } = parseZone(zone);
+  if (!city) return null;
+
+  const url = `${base}/api/v1/geo/geocode`;
+  const params = new URLSearchParams({ city });
+  if (province) params.set('province', province);
+
+  try {
+    const res = await axios.get(`${url}?${params.toString()}`, { timeout: 4000 });
+    if (res.data && typeof res.data.lat === 'number' && typeof res.data.lng === 'number') {
+      return { lat: res.data.lat, lng: res.data.lng };
+    }
+    return null;
+  } catch (err) {
+    if (err.response && err.response.status === 404) {
+      console.log('[Matchmaking] Geolocation: zona no encontrada en catálogo:', city, province || '');
+    } else {
+      console.warn('[Matchmaking] Geolocation no disponible:', err.message);
+    }
+    return null;
+  }
+}
+
+/**
  * Busca profesionales que coincidan con los datos del ticket.
  * @param {object} ticketData - { category, zone, urgency }
  * @returns {Promise<Array>} Top 3 profesionales encontrados.
@@ -71,15 +122,26 @@ async function findMatchingProviders(ticketData) {
         console.log(`[Matchmaking] URL FINAL: ${fullUrl} (via ${via})`);
 
         const { categoryName: apiCategoryName, categorySlug: apiCategorySlug } = normalizeCategoryForApi(category);
+        const cityForSearch = normalizeZoneForSearch(zone);
         if (apiCategorySlug) console.log(`[Matchmaking] Categoría normalizada: "${category}" → slug "${apiCategorySlug}"`);
+        if (cityForSearch !== (zone || '').trim()) console.log(`[Matchmaking] Zona normalizada: "${zone}" → ciudad búsqueda "${cityForSearch}"`);
+
         const params = {
-            city: zone,
+            city: cityForSearch,
             urgency: urgency,
             status: 'active',
             limit: 10
         };
         if (apiCategorySlug) params.categorySlug = apiCategorySlug;
         else if (apiCategoryName) params.categoryName = apiCategoryName;
+
+        const coords = await geocodeZone(zone);
+        if (coords) {
+            params.lat = coords.lat;
+            params.lng = coords.lng;
+            params.radiusKm = Number(process.env.MATCHMAKING_RADIUS_KM) || DEFAULT_RADIUS_KM;
+            console.log(`[Matchmaking] Búsqueda por radio: ${params.radiusKm} km desde (${coords.lat}, ${coords.lng})`);
+        }
 
         const response = await axios.get(fullUrl, {
             params,

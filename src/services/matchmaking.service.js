@@ -10,12 +10,12 @@ const axios = require('axios');
  * y hace proxy al provider-service; así solo necesitas una URL y evitas 404 por rutas.
  */
 
-// Preferir API Gateway si está configurado; si no, URL directa del provider-service.
+// Prioridad: PROVIDER_SERVICE_URL (directo) evita 404 si el gateway no está disponible en Railway.
 function getProviderBaseUrl() {
-  const gateway = process.env.API_GATEWAY_URL && process.env.API_GATEWAY_URL.trim();
   const direct = process.env.PROVIDER_SERVICE_URL && process.env.PROVIDER_SERVICE_URL.trim();
-  if (gateway) return { url: gateway.replace(/\/$/, ''), via: 'gateway' };
+  const gateway = process.env.API_GATEWAY_URL && process.env.API_GATEWAY_URL.trim();
   if (direct) return { url: direct.replace(/\/$/, ''), via: 'direct' };
+  if (gateway) return { url: gateway.replace(/\/$/, ''), via: 'gateway' };
   return { url: 'http://localhost:4003', via: 'local' };
 }
 

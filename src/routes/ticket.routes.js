@@ -1,7 +1,31 @@
 'use strict';
 
 const router = require('express').Router();
-const { saveTicket, getTickets, updateTicketStatus } = require('../services/db.service');
+const { saveTicket, getTickets, getTicketById, updateTicketStatus } = require('../services/db.service');
+
+/**
+ * GET /api/v1/tickets/:id
+ * Obtiene un ticket por ID (Magic Link / página de selección de profesionales).
+ */
+router.get('/tickets/:id', async (req, res) => {
+    try {
+        const id = req.params.id;
+        const ticket = await getTicketById(id);
+        if (!ticket) {
+            return res.status(404).json({
+                success: false,
+                error: 'Ticket no encontrado.'
+            });
+        }
+        res.json({ success: true, data: ticket });
+    } catch (err) {
+        console.error('[Tickets API] Error al obtener ticket:', err.message);
+        res.status(500).json({
+            success: false,
+            error: 'Error al obtener el ticket'
+        });
+    }
+});
 
 /**
  * GET /api/v1/tickets

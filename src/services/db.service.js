@@ -159,6 +159,22 @@ async function getTickets() {
 }
 
 /**
+ * Obtiene un ticket por ID (para Magic Link / página de match).
+ * @param {number|string} id - ID del ticket.
+ * @returns {Promise<object|null>} Ticket o null si no existe.
+ */
+async function getTicketById(id) {
+    const query = 'SELECT * FROM tickets WHERE id = $1;';
+    try {
+        const res = await pool.query(query, [id]);
+        return res.rows[0] || null;
+    } catch (err) {
+        console.error('[DB] Error al obtener ticket por ID:', err.message);
+        throw err;
+    }
+}
+
+/**
  * Actualiza el estado de un ticket.
  * @param {number} id - ID del ticket.
  * @param {string} newStatus - Nuevo estado (ABIERTO, ASIGNADO, COMPLETADO, CANCELADO).
@@ -177,6 +193,7 @@ async function updateTicketStatus(id, newStatus) {
 module.exports = {
     saveTicket,
     getTickets,
+    getTicketById,
     updateTicketStatus,
     getUser,
     createUser,

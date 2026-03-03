@@ -1,7 +1,8 @@
 'use strict';
 
 const router = require('express').Router();
-const { saveTicket, getTickets, getTicketById, updateTicketStatus } = require('../services/db.service');
+const { saveTicket, getTickets, getTicketById, updateTicketStatus, assignTicket } = require('../services/db.service');
+const { sendWhatsAppText } = require('../services/whatsapp.service');
 
 /**
  * GET /api/v1/tickets/:id
@@ -82,6 +83,56 @@ router.patch('/tickets/:id/status', async (req, res) => {
         res.status(500).json({
             success: false,
             error: 'Error interno al actualizar el ticket'
+        });
+    }
+});
+
+/**
+ * POST /api/v1/tickets/:id/assign
+ * Asigna un ticket a un profesional. Actualiza status a ASIGNADO, guarda provider_id y notifica al cliente por WhatsApp.
+ * Body: { providerId, providerName }
+ */
+router.post('/tickets/:id/assign', async (req, res) => {
+    try {
+        const id = req.params.id;
+        const { providerId, providerName } = req.body;
+
+        if (!providerId || !providerName) {
+            return res.status(400).json({
+                success: false,
+                error: 'providerId y providerName son requeridos.'
+            });
+        }
+
+        const ticket = await getTicketById(id);
+        if (!ticket) {
+            return res.status(404).json({
+                success: false,
+                error: 'Ticket no encontrado.'
+            });
+        }
+
+        const updatedTicket = await assignTicket(id, providerId);
+        if (!updatedTicket) {
+            return res.status(500).json({
+                success: false,
+                error: 'Error al asignar el ticket.'
+            });
+        }
+
+        const message = `¡Excelente elección! 🚀 Ya le avisé a ${providerName} sobre tu pedido. En los próximos minutos te va a escribir por acá para coordinar los detalles.`;
+        await sendWhatsAppText(ticket.phone_number, message);
+
+        res.json({
+            success: true,
+            data: updatedTicket,
+            message: 'Ticket asignado y cliente notificado.'
+        });
+    } catch (err) {
+        console.error('[Tickets API] Error al asignar ticket:', err.message);
+        res.status(500).json({
+            success: false,
+            error: 'Error al asignar el ticket'
         });
     }
 });

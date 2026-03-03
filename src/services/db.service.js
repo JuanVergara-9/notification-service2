@@ -53,6 +53,9 @@ const initDB = async () => {
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='tickets' AND column_name='source') THEN
                     ALTER TABLE tickets ADD COLUMN source VARCHAR(20);
                 END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='tickets' AND column_name='provider_id') THEN
+                    ALTER TABLE tickets ADD COLUMN provider_id INTEGER;
+                END IF;
             END $$;
         `;
         await pool.query(checkCols);
@@ -190,11 +193,29 @@ async function updateTicketStatus(id, newStatus) {
     }
 }
 
+/**
+ * Asigna un ticket a un proveedor: actualiza status a ASIGNADO y guarda provider_id.
+ * @param {number|string} ticketId - ID del ticket.
+ * @param {number|string} providerId - ID del proveedor asignado.
+ * @returns {Promise<object|null>} Ticket actualizado o null si no existe.
+ */
+async function assignTicket(ticketId, providerId) {
+    const query = 'UPDATE tickets SET status = $1, provider_id = $2 WHERE id = $3 RETURNING *;';
+    try {
+        const res = await pool.query(query, ['ASIGNADO', providerId, ticketId]);
+        return res.rows[0] || null;
+    } catch (err) {
+        console.error('[DB] Error al asignar ticket:', err.message);
+        throw err;
+    }
+}
+
 module.exports = {
     saveTicket,
     getTickets,
     getTicketById,
     updateTicketStatus,
+    assignTicket,
     getUser,
     createUser,
     acceptTerms,

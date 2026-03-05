@@ -59,6 +59,9 @@ const initDB = async () => {
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='tickets' AND column_name='provider_name') THEN
                     ALTER TABLE tickets ADD COLUMN provider_name VARCHAR(200);
                 END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='tickets' AND column_name='final_amount') THEN
+                    ALTER TABLE tickets ADD COLUMN final_amount NUMERIC(12, 2);
+                END IF;
             END $$;
         `;
         await pool.query(checkCols);
@@ -214,12 +217,29 @@ async function assignTicket(ticketId, providerId, providerName) {
     }
 }
 
+/**
+ * Marca un ticket como COMPLETADO (Shadow Ledger: final_amount se actualiza después vía otro flujo).
+ * @param {number|string} ticketId - ID del ticket.
+ * @returns {Promise<object|null>} Ticket actualizado o null.
+ */
+async function completeTicket(ticketId) {
+    const query = 'UPDATE tickets SET status = $1 WHERE id = $2 RETURNING *;';
+    try {
+        const res = await pool.query(query, ['COMPLETADO', ticketId]);
+        return res.rows[0] || null;
+    } catch (err) {
+        console.error('[DB] Error al completar ticket:', err.message);
+        throw err;
+    }
+}
+
 module.exports = {
     saveTicket,
     getTickets,
     getTicketById,
     updateTicketStatus,
     assignTicket,
+    completeTicket,
     getUser,
     createUser,
     acceptTerms,

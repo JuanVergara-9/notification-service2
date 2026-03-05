@@ -1,8 +1,9 @@
 'use strict';
 
 const router = require('express').Router();
-const { saveTicket, getTickets, getTicketById, updateTicketStatus, assignTicket } = require('../services/db.service');
+const { saveTicket, getTickets, getTicketById, updateTicketStatus, assignTicket, completeTicket } = require('../services/db.service');
 const { sendWhatsAppText } = require('../services/whatsapp.service');
+const { getProviderWhatsAppNumber } = require('../services/provider-client.service');
 
 /**
  * GET /api/v1/tickets/:id
@@ -133,6 +134,68 @@ router.post('/tickets/:id/assign', async (req, res) => {
         res.status(500).json({
             success: false,
             error: 'Error al asignar el ticket'
+        });
+    }
+});
+
+/**
+ * POST /api/v1/tickets/:id/complete
+ * Marca el ticket como COMPLETADO y envía al profesional un mensaje por WhatsApp
+ * para solicitar el monto final (Shadow Ledger / GMV).
+ */
+const COMPLETE_MESSAGE_TO_PROVIDER = '¡Felicitaciones por completar el trabajo! 🎉 Para ir armando tu historial financiero en miservicio y destrabar beneficios, ¿cuál fue el monto final que le cobraste al cliente? (Respondeme solo con el número, ej: 15000)';
+
+router.post('/tickets/:id/complete', async (req, res) => {
+    try {
+        const id = req.params.id;
+        const ticket = await getTicketById(id);
+        if (!ticket) {
+            return res.status(404).json({
+                success: false,
+                error: 'Ticket no encontrado.'
+            });
+        }
+        if (ticket.status !== 'ASIGNADO') {
+            return res.status(400).json({
+                success: false,
+                error: 'Solo se pueden completar tickets en estado ASIGNADO.'
+            });
+        }
+        if (!ticket.provider_id) {
+            return res.status(400).json({
+                success: false,
+                error: 'El ticket no tiene profesional asignado.'
+            });
+        }
+
+        const providerPhone = await getProviderWhatsAppNumber(ticket.provider_id);
+        if (!providerPhone) {
+            return res.status(400).json({
+                success: false,
+                error: 'No se pudo obtener el número de WhatsApp del profesional asignado.'
+            });
+        }
+
+        const updatedTicket = await completeTicket(id);
+        if (!updatedTicket) {
+            return res.status(500).json({
+                success: false,
+                error: 'Error al marcar el ticket como completado.'
+            });
+        }
+
+        await sendWhatsAppText(providerPhone, COMPLETE_MESSAGE_TO_PROVIDER);
+
+        res.json({
+            success: true,
+            data: updatedTicket,
+            message: 'Ticket marcado como completado y mensaje enviado al profesional.'
+        });
+    } catch (err) {
+        console.error('[Tickets API] Error al completar ticket:', err.message);
+        res.status(500).json({
+            success: false,
+            error: 'Error al completar el ticket'
         });
     }
 });

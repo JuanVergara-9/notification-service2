@@ -176,7 +176,7 @@ router.post('/tickets/:id/complete', async (req, res) => {
             });
         }
 
-        const updatedTicket = await completeTicket(id);
+        const updatedTicket = await completeTicket(id, providerPhone);
         if (!updatedTicket) {
             return res.status(500).json({
                 success: false,

@@ -62,6 +62,9 @@ const initDB = async () => {
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='tickets' AND column_name='final_amount') THEN
                     ALTER TABLE tickets ADD COLUMN final_amount NUMERIC(12, 2);
                 END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='tickets' AND column_name='provider_phone') THEN
+                    ALTER TABLE tickets ADD COLUMN provider_phone VARCHAR(32);
+                END IF;
             END $$;
         `;
         await pool.query(checkCols);
@@ -218,19 +221,69 @@ async function assignTicket(ticketId, providerId, providerName) {
 }
 
 /**
- * Marca un ticket como COMPLETADO (Shadow Ledger: final_amount se actualiza después vía otro flujo).
+ * Marca un ticket como COMPLETADO y guarda el teléfono del profesional para el Shadow Ledger.
  * @param {number|string} ticketId - ID del ticket.
+ * @param {string} providerPhone - Teléfono WhatsApp del profesional (E.164).
  * @returns {Promise<object|null>} Ticket actualizado o null.
  */
-async function completeTicket(ticketId) {
-    const query = 'UPDATE tickets SET status = $1 WHERE id = $2 RETURNING *;';
+async function completeTicket(ticketId, providerPhone) {
+    const query = 'UPDATE tickets SET status = $1, provider_phone = $2 WHERE id = $3 RETURNING *;';
     try {
-        const res = await pool.query(query, ['COMPLETADO', ticketId]);
+        const res = await pool.query(query, ['COMPLETADO', providerPhone || null, ticketId]);
         return res.rows[0] || null;
     } catch (err) {
         console.error('[DB] Error al completar ticket:', err.message);
         throw err;
     }
+}
+
+/**
+ * Obtiene un ticket COMPLETADO con final_amount pendiente (NULL) para el teléfono del profesional.
+ * @param {string} providerPhoneNormalized - Teléfono normalizado (solo dígitos, 54 para Argentina).
+ * @returns {Promise<object|null>} Ticket o null.
+ */
+async function getPendingAmountTicketByProviderPhone(providerPhoneNormalized) {
+    const query = `
+        SELECT * FROM tickets 
+        WHERE status = 'COMPLETADO' AND final_amount IS NULL AND provider_phone IS NOT NULL
+        ORDER BY id DESC LIMIT 50;
+    `;
+    try {
+        const res = await pool.query(query);
+        for (const row of res.rows) {
+            const stored = normalizePhoneForLedger(row.provider_phone);
+            if (stored === providerPhoneNormalized) return row;
+        }
+        return null;
+    } catch (err) {
+        console.error('[DB] Error al buscar ticket pendiente de monto:', err.message);
+        throw err;
+    }
+}
+
+/**
+ * Actualiza el monto final (GMV) de un ticket.
+ * @param {number|string} ticketId - ID del ticket.
+ * @param {number} amount - Monto a registrar.
+ * @returns {Promise<object|null>} Ticket actualizado o null.
+ */
+async function updateTicketFinalAmount(ticketId, amount) {
+    const query = 'UPDATE tickets SET final_amount = $1 WHERE id = $2 RETURNING *;';
+    try {
+        const res = await pool.query(query, [amount, ticketId]);
+        return res.rows[0] || null;
+    } catch (err) {
+        console.error('[DB] Error al actualizar final_amount:', err.message);
+        throw err;
+    }
+}
+
+/** Normaliza teléfono para comparación (solo dígitos; Argentina 549 -> 54). */
+function normalizePhoneForLedger(phone) {
+    if (!phone) return '';
+    let digits = String(phone).replace(/\D/g, '');
+    if (digits.startsWith('549')) digits = '54' + digits.slice(3);
+    return digits;
 }
 
 module.exports = {
@@ -240,6 +293,9 @@ module.exports = {
     updateTicketStatus,
     assignTicket,
     completeTicket,
+    getPendingAmountTicketByProviderPhone,
+    updateTicketFinalAmount,
+    normalizePhoneForLedger,
     getUser,
     createUser,
     acceptTerms,

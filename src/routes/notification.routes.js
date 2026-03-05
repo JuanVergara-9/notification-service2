@@ -5,6 +5,7 @@ const { sendWhatsAppText, sendTermsInteractiveMessage, sendMatchResultsMessage }
 const { analyzeMessage } = require('../services/ai.service');
 const { saveTicket, getUser, createUser, acceptTerms, CURRENT_TERMS_VERSION } = require('../services/db.service');
 const { findMatchingProviders } = require('../services/matchmaking.service');
+const { checkAndProcessProviderAmount } = require('../services/ledger.service');
 
 const WEBHOOK_VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN || '';
 const WEBHOOK_ALLOWED_NUMBER = process.env.WEBHOOK_ALLOWED_NUMBER || ''; // Número con código de país (ej. 5492604800958)
@@ -48,6 +49,15 @@ router.post('/webhook', async (req, res) => {
         const interactive = first.type === 'interactive' ? first.interactive : null;
 
         console.log('[Webhook] Mensaje recibido.', { from, type: first.type });
+
+        // --- Interceptor Shadow Ledger: captura respuesta del profesional con GMV (evita Gemini) ---
+        if (first.type === 'text' && text) {
+            const intercepted = await checkAndProcessProviderAmount(from, text);
+            if (intercepted) {
+                console.log('[Webhook] Mensaje interceptado por Ledger (GMV), no se envía a Gemini.');
+                return;
+            }
+        }
 
         if (!WEBHOOK_ALLOWED_NUMBER || from !== WEBHOOK_ALLOWED_NUMBER) {
             console.log('[Webhook] Remitente no autorizado, no se procesa.', { from, allowed: WEBHOOK_ALLOWED_NUMBER });

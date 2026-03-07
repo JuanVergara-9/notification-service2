@@ -113,7 +113,7 @@ router.post('/tickets/:id/assign', async (req, res) => {
             });
         }
 
-        const updatedTicket = await assignTicket(id, providerId, providerName);
+        const updatedTicket = await assignTicket(id, providerId, providerName, providerPhone);
         if (!updatedTicket) {
             return res.status(500).json({
                 success: false,

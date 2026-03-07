@@ -131,4 +131,56 @@ async function sendMatchResultsMessage(phoneNumber, matchCount, ticketId) {
     return sendWhatsAppText(phoneNumber, message);
 }
 
-module.exports = { sendWhatsAppText, sendTermsInteractiveMessage, sendMatchResultsMessage };
+/**
+ * Envía al cliente el mensaje interactivo anti-ghosting (¿ya te contactó el profesional?).
+ * @param {string} phoneNumber - Número del cliente (ticket.phone_number).
+ * @param {number|string} ticketId - ID del ticket (para payloads de botones).
+ * @returns {Promise<{ success: boolean, messageId?: string, error?: string }>}
+ */
+async function sendGhostCheckInteractiveMessage(phoneNumber, ticketId) {
+    if (!token || !phoneNumberId) {
+        return { success: false, error: 'META_WA_TOKEN or META_WA_PHONE_NUMBER_ID not configured' };
+    }
+
+    let to = String(phoneNumber).replace(/\D/g, '');
+    if (!to) return { success: false, error: 'Invalid phone number' };
+    if (to.startsWith('549')) to = '54' + to.slice(3);
+
+    const idYes = `GHOST_YES_${ticketId}`;
+    const idNo = `GHOST_NO_${ticketId}`;
+
+    try {
+        const url = `${META_GRAPH_BASE}/${phoneNumberId}/messages`;
+        const { data } = await axios.post(
+            url,
+            {
+                messaging_product: 'whatsapp',
+                to,
+                type: 'interactive',
+                interactive: {
+                    type: 'button',
+                    body: {
+                        text: '¡Hola de nuevo! 😊 Pasó media hora desde que elegiste a tu profesional. ¿Ya se puso en contacto con vos?'
+                    },
+                    action: {
+                        buttons: [
+                            { type: 'reply', reply: { id: idYes, title: '✅ Sí, ya hablamos' } },
+                            { type: 'reply', reply: { id: idNo, title: '❌ No, todavía no' } }
+                        ]
+                    }
+                }
+            },
+            {
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                timeout: 15_000
+            }
+        );
+        return { success: true, messageId: data?.messages?.[0]?.id };
+    } catch (err) {
+        const message = err.response?.data?.error?.message || err.message;
+        console.error('[WhatsApp] ghost check interactive send error:', message);
+        return { success: false, error: message };
+    }
+}
+
+module.exports = { sendWhatsAppText, sendTermsInteractiveMessage, sendMatchResultsMessage, sendGhostCheckInteractiveMessage };

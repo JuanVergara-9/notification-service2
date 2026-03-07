@@ -29,6 +29,9 @@ app.use('/api/v1', require('./routes/ticket.routes'));
 
 app.use((_req, res) => res.status(404).json({ error: 'Not found' }));
 
+const { initGhostingCron } = require('./cron/ghosting.cron');
+initGhostingCron();
+
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`notification-service on :${PORT}`);
 });

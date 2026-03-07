@@ -3,9 +3,10 @@
 const router = require('express').Router();
 const { sendWhatsAppText, sendTermsInteractiveMessage, sendMatchResultsMessage } = require('../services/whatsapp.service');
 const { analyzeMessage } = require('../services/ai.service');
-const { saveTicket, getUser, createUser, acceptTerms, CURRENT_TERMS_VERSION } = require('../services/db.service');
+const { saveTicket, getUser, createUser, acceptTerms, CURRENT_TERMS_VERSION, getTicketById, reopenTicketAfterGhost } = require('../services/db.service');
 const { findMatchingProviders } = require('../services/matchmaking.service');
 const { checkAndProcessProviderAmount } = require('../services/ledger.service');
+const { getProviderWhatsAppNumber } = require('../services/provider-client.service');
 
 const WEBHOOK_VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN || '';
 const WEBHOOK_ALLOWED_NUMBER = process.env.WEBHOOK_ALLOWED_NUMBER || ''; // Número con código de país (ej. 5492604800958)
@@ -55,6 +56,34 @@ router.post('/webhook', async (req, res) => {
             const intercepted = await checkAndProcessProviderAmount(from, text);
             if (intercepted) {
                 console.log('[Webhook] Mensaje interceptado por Ledger (GMV), no se envía a Gemini.');
+                return;
+            }
+        }
+
+        // --- Interceptor Anti-Ghosting (botones GHOST_YES_ / GHOST_NO_) - antes del allowed number ---
+        if (interactive) {
+            const buttonId = interactive.button_reply?.id || '';
+            const metaRecipient = from.startsWith('549') ? '54' + from.slice(3) : from;
+
+            if (buttonId.startsWith('GHOST_YES_')) {
+                await sendWhatsAppText(metaRecipient, '¡Genial! Te dejo en buenas manos. ¡Avisame cuando terminen el trabajo!');
+                console.log('[Webhook] Cliente confirmó contacto (GHOST_YES).', { from });
+                return;
+            }
+
+            if (buttonId.startsWith('GHOST_NO_')) {
+                const ticketId = buttonId.replace(/^GHOST_NO_/, '');
+                const ticket = ticketId ? await getTicketById(ticketId) : null;
+                if (ticket) {
+                    await reopenTicketAfterGhost(ticketId);
+                    const FRONTEND_URL = process.env.FRONTEND_URL || 'https://miservicio.ar';
+                    await sendWhatsAppText(metaRecipient, `Te pido mil disculpas. Evidentemente el profesional tuvo un contratiempo. Te vuelvo a mandar el enlace para que elijas a otra persona disponible: ${FRONTEND_URL}/pedidos/match/${ticketId}`);
+                    const providerPhone = ticket.provider_phone || (ticket.provider_id ? await getProviderWhatsAppNumber(ticket.provider_id) : null);
+                    if (providerPhone) {
+                        await sendWhatsAppText(providerPhone, 'Hola. Como no contactaste al cliente a tiempo, el pedido fue devuelto a la bolsa de trabajo. Recordá que la rapidez es clave en miservicio.');
+                    }
+                    console.log('[Webhook] Ticket reabierto por ghosting (GHOST_NO).', { ticketId, from });
+                }
                 return;
             }
         }

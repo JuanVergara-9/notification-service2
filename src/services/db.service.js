@@ -65,6 +65,12 @@ const initDB = async () => {
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='tickets' AND column_name='provider_phone') THEN
                     ALTER TABLE tickets ADD COLUMN provider_phone VARCHAR(32);
                 END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='tickets' AND column_name='assigned_at') THEN
+                    ALTER TABLE tickets ADD COLUMN assigned_at TIMESTAMP;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='tickets' AND column_name='ghost_check_sent') THEN
+                    ALTER TABLE tickets ADD COLUMN ghost_check_sent BOOLEAN DEFAULT false;
+                END IF;
             END $$;
         `;
         await pool.query(checkCols);
@@ -203,19 +209,76 @@ async function updateTicketStatus(id, newStatus) {
 }
 
 /**
- * Asigna un ticket a un proveedor: actualiza status a ASIGNADO, guarda provider_id y provider_name.
+ * Asigna un ticket a un proveedor: actualiza status a ASIGNADO, guarda provider_id, provider_name, provider_phone y assigned_at = NOW().
  * @param {number|string} ticketId - ID del ticket.
  * @param {number|string} providerId - ID del proveedor asignado.
  * @param {string} providerName - Nombre del proveedor (para mostrar en dashboard).
+ * @param {string} [providerPhone] - Teléfono WhatsApp del profesional (para anti-ghosting y reasignación).
  * @returns {Promise<object|null>} Ticket actualizado o null si no existe.
  */
-async function assignTicket(ticketId, providerId, providerName) {
-    const query = 'UPDATE tickets SET status = $1, provider_id = $2, provider_name = $3 WHERE id = $4 RETURNING *;';
+async function assignTicket(ticketId, providerId, providerName, providerPhone) {
+    const query = `UPDATE tickets SET status = $1, provider_id = $2, provider_name = $3, provider_phone = $4, assigned_at = NOW(), ghost_check_sent = false WHERE id = $5 RETURNING *;`;
     try {
-        const res = await pool.query(query, ['ASIGNADO', providerId, providerName || null, ticketId]);
+        const res = await pool.query(query, ['ASIGNADO', providerId, providerName || null, providerPhone || null, ticketId]);
         return res.rows[0] || null;
     } catch (err) {
         console.error('[DB] Error al asignar ticket:', err.message);
+        throw err;
+    }
+}
+
+/**
+ * Tickets ASIGNADOS con más de 30 minutos desde assigned_at y sin haber enviado ghost check.
+ * @returns {Promise<Array>}
+ */
+async function getTicketsForGhostCheck() {
+    const query = `
+        SELECT * FROM tickets 
+        WHERE status = 'ASIGNADO' 
+          AND assigned_at IS NOT NULL 
+          AND (ghost_check_sent = false OR ghost_check_sent IS NULL)
+          AND assigned_at < NOW() - INTERVAL '30 minutes'
+        ORDER BY assigned_at ASC;
+    `;
+    try {
+        const res = await pool.query(query);
+        return res.rows;
+    } catch (err) {
+        console.error('[DB] Error al obtener tickets para ghost check:', err.message);
+        throw err;
+    }
+}
+
+/**
+ * Marca que ya se envió el mensaje de ghost check al cliente.
+ * @param {number|string} ticketId
+ * @returns {Promise<object|null>}
+ */
+async function setGhostCheckSent(ticketId) {
+    const query = 'UPDATE tickets SET ghost_check_sent = true WHERE id = $1 RETURNING *;';
+    try {
+        const res = await pool.query(query, [ticketId]);
+        return res.rows[0] || null;
+    } catch (err) {
+        console.error('[DB] Error al marcar ghost_check_sent:', err.message);
+        throw err;
+    }
+}
+
+/**
+ * Reabre un ticket tras ghosting: vuelve a ABIERTO y limpia asignación.
+ * @param {number|string} ticketId
+ * @returns {Promise<object|null>}
+ */
+async function reopenTicketAfterGhost(ticketId) {
+    const query = `UPDATE tickets 
+        SET status = 'ABIERTO', provider_id = NULL, provider_name = NULL, provider_phone = NULL, assigned_at = NULL, ghost_check_sent = false 
+        WHERE id = $1 RETURNING *;`;
+    try {
+        const res = await pool.query(query, [ticketId]);
+        return res.rows[0] || null;
+    } catch (err) {
+        console.error('[DB] Error al reabrir ticket por ghosting:', err.message);
         throw err;
     }
 }
@@ -296,6 +359,9 @@ module.exports = {
     getPendingAmountTicketByProviderPhone,
     updateTicketFinalAmount,
     normalizePhoneForLedger,
+    getTicketsForGhostCheck,
+    setGhostCheckSent,
+    reopenTicketAfterGhost,
     getUser,
     createUser,
     acceptTerms,

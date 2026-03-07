@@ -71,6 +71,9 @@ const initDB = async () => {
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='tickets' AND column_name='ghost_check_sent') THEN
                     ALTER TABLE tickets ADD COLUMN ghost_check_sent BOOLEAN DEFAULT false;
                 END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='tickets' AND column_name='client_rating') THEN
+                    ALTER TABLE tickets ADD COLUMN client_rating INTEGER;
+                END IF;
             END $$;
         `;
         await pool.query(checkCols);
@@ -349,6 +352,47 @@ function normalizePhoneForLedger(phone) {
     return digits;
 }
 
+/**
+ * Obtiene un ticket COMPLETADO con final_amount ya registrado y client_rating pendiente (NULL) para el teléfono del cliente.
+ * @param {string} clientPhoneNormalized - Teléfono del cliente normalizado (solo dígitos, 54 para Argentina).
+ * @returns {Promise<object|null>} Ticket o null.
+ */
+async function getPendingReviewTicketByClientPhone(clientPhoneNormalized) {
+    const query = `
+        SELECT * FROM tickets 
+        WHERE status = 'COMPLETADO' AND final_amount IS NOT NULL AND client_rating IS NULL
+        ORDER BY id DESC LIMIT 50;
+    `;
+    try {
+        const res = await pool.query(query);
+        for (const row of res.rows) {
+            const stored = normalizePhoneForLedger(row.phone_number);
+            if (stored === clientPhoneNormalized) return row;
+        }
+        return null;
+    } catch (err) {
+        console.error('[DB] Error al buscar ticket pendiente de reseña:', err.message);
+        throw err;
+    }
+}
+
+/**
+ * Actualiza la calificación del cliente en un ticket.
+ * @param {number|string} ticketId - ID del ticket.
+ * @param {number} rating - Calificación 1-5.
+ * @returns {Promise<object|null>} Ticket actualizado o null.
+ */
+async function updateTicketClientRating(ticketId, rating) {
+    const query = 'UPDATE tickets SET client_rating = $1 WHERE id = $2 RETURNING *;';
+    try {
+        const res = await pool.query(query, [rating, ticketId]);
+        return res.rows[0] || null;
+    } catch (err) {
+        console.error('[DB] Error al actualizar client_rating:', err.message);
+        throw err;
+    }
+}
+
 module.exports = {
     saveTicket,
     getTickets,
@@ -358,6 +402,8 @@ module.exports = {
     completeTicket,
     getPendingAmountTicketByProviderPhone,
     updateTicketFinalAmount,
+    getPendingReviewTicketByClientPhone,
+    updateTicketClientRating,
     normalizePhoneForLedger,
     getTicketsForGhostCheck,
     setGhostCheckSent,

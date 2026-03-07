@@ -6,6 +6,7 @@ const { analyzeMessage } = require('../services/ai.service');
 const { saveTicket, getUser, createUser, acceptTerms, CURRENT_TERMS_VERSION, getTicketById, reopenTicketAfterGhost } = require('../services/db.service');
 const { findMatchingProviders } = require('../services/matchmaking.service');
 const { checkAndProcessProviderAmount } = require('../services/ledger.service');
+const { checkAndProcessClientReview } = require('../services/review.service');
 const { getProviderWhatsAppNumber } = require('../services/provider-client.service');
 
 const WEBHOOK_VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN || '';
@@ -56,6 +57,12 @@ router.post('/webhook', async (req, res) => {
             const intercepted = await checkAndProcessProviderAmount(from, text);
             if (intercepted) {
                 console.log('[Webhook] Mensaje interceptado por Ledger (GMV), no se envía a Gemini.');
+                return;
+            }
+            // --- Interceptor de reseñas: captura calificación 1-5 del cliente (evita Gemini) ---
+            const reviewIntercepted = await checkAndProcessClientReview(from, text);
+            if (reviewIntercepted) {
+                console.log('[Webhook] Mensaje interceptado por Review (calificación), no se envía a Gemini.');
                 return;
             }
         }

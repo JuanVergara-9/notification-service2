@@ -5,6 +5,7 @@ const { sendWhatsAppText } = require('./whatsapp.service');
 
 const MSG_ASK_AMOUNT = 'Por favor, respondeme solo con el número del monto que cobraste (ej: 15000).';
 const MSG_CONFIRM_TEMPLATE = (amount) => `¡Excelente! 💸 Ya registramos tu ingreso de $${amount}. Esto te ayuda a construir tu historial financiero en miservicio. ¡A seguir creciendo!`;
+const MSG_ASK_CLIENT_RATING = '¡Hola! Vimos que el servicio con tu profesional ha finalizado. Para ayudarnos a mantener la calidad de miservicio, ¿qué calificación le darías del 1 al 5? (Respondeme solo con el número, siendo 5 excelente).';
 
 /**
  * Comprueba si el mensaje es la respuesta de un profesional con el monto cobrado (GMV)
@@ -52,6 +53,12 @@ async function checkAndProcessProviderAmount(phoneNumber, messageText) {
     // Paso E: Confirmación por WhatsApp al profesional
     const formattedAmount = Number.isInteger(amount) ? String(amount) : amount.toFixed(2);
     await sendWhatsAppText(phoneNumber, MSG_CONFIRM_TEMPLATE(formattedAmount));
+
+    // Paso F: Pedir calificación al cliente (Shadow Ledger - validación)
+    const clientPhone = ticket.phone_number;
+    if (clientPhone) {
+        await sendWhatsAppText(clientPhone, MSG_ASK_CLIENT_RATING);
+    }
 
     console.log('[Ledger] GMV registrado.', { ticketId: ticket.id, amount: formattedAmount, providerPhone: normalized });
     return true;

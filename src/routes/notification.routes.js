@@ -144,7 +144,7 @@ router.post('/webhook', async (req, res) => {
 
                 // --- NUEVO: Motor de Matchmaking ---
                 console.log('[Webhook] Iniciando Matchmaking...');
-                const matches = await findMatchingProviders(result.extractedData);
+                const matches = await findMatchingProviders(result.extractedData, ticketId);
                 
                 // Normalización definitiva para Argentina: Meta API Cloud rechaza el '9' en envíos
                 const metaRecipient = from.startsWith('549') ? '54' + from.slice(3) : from;

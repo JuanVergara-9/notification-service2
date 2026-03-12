@@ -1,6 +1,7 @@
 'use strict';
 
 const axios = require('axios');
+const { updateTicketCategorySlug } = require('./db.service');
 
 /**
  * Servicio de Matchmaking para conectar tickets con profesionales.
@@ -106,10 +107,12 @@ async function geocodeZone(zone) {
 
 /**
  * Busca profesionales que coincidan con los datos del ticket.
+ * Si se pasa ticketId y se normaliza la categoría a un slug, guarda ese slug en tickets.category_slug para el frontend.
  * @param {object} ticketData - { category, zone, urgency }
+ * @param {number|string} [ticketId] - ID del ticket (opcional); si se proporciona, se persiste category_slug al normalizar.
  * @returns {Promise<Array>} Top 3 profesionales encontrados.
  */
-async function findMatchingProviders(ticketData) {
+async function findMatchingProviders(ticketData, ticketId) {
     const { category, zone, urgency } = ticketData;
     
     console.log(`[Matchmaking] Buscando profesionales para: ${category} en ${zone} (Urgencia: ${urgency})`);
@@ -123,7 +126,17 @@ async function findMatchingProviders(ticketData) {
 
         const { categoryName: apiCategoryName, categorySlug: apiCategorySlug } = normalizeCategoryForApi(category);
         const cityForSearch = normalizeZoneForSearch(zone);
-        if (apiCategorySlug) console.log(`[Matchmaking] Categoría normalizada: "${category}" → slug "${apiCategorySlug}"`);
+        if (apiCategorySlug) {
+            console.log(`[Matchmaking] Categoría normalizada: "${category}" → slug "${apiCategorySlug}"`);
+            if (ticketId != null) {
+                try {
+                    await updateTicketCategorySlug(ticketId, apiCategorySlug);
+                    console.log(`[Matchmaking] category_slug guardado en ticket ${ticketId}: "${apiCategorySlug}"`);
+                } catch (err) {
+                    console.warn('[Matchmaking] No se pudo guardar category_slug en ticket:', err.message);
+                }
+            }
+        }
         if (cityForSearch !== (zone || '').trim()) console.log(`[Matchmaking] Zona normalizada: "${zone}" → ciudad búsqueda "${cityForSearch}"`);
 
         const params = {

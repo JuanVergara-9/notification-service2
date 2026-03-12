@@ -90,13 +90,13 @@ router.patch('/tickets/:id/status', async (req, res) => {
 
 /**
  * POST /api/v1/tickets/:id/assign
- * Asigna un ticket a un profesional. Actualiza status a ASIGNADO, guarda provider_id y notifica al cliente por WhatsApp.
- * Body: { providerId, providerName }
+ * Asigna un ticket a un profesional. Actualiza status a ASIGNADO, guarda provider_id, provider_phone y notifica al cliente por WhatsApp.
+ * Body: { providerId, providerName, providerPhone? }
  */
 router.post('/tickets/:id/assign', async (req, res) => {
     try {
         const id = req.params.id;
-        const { providerId, providerName } = req.body;
+        const { providerId, providerName, providerPhone } = req.body;
 
         if (!providerId || !providerName) {
             return res.status(400).json({

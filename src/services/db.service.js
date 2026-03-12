@@ -74,6 +74,9 @@ const initDB = async () => {
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='tickets' AND column_name='client_rating') THEN
                     ALTER TABLE tickets ADD COLUMN client_rating INTEGER;
                 END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='tickets' AND column_name='category_slug') THEN
+                    ALTER TABLE tickets ADD COLUMN category_slug VARCHAR(100);
+                END IF;
             END $$;
         `;
         await pool.query(checkCols);
@@ -393,6 +396,23 @@ async function updateTicketClientRating(ticketId, rating) {
     }
 }
 
+/**
+ * Actualiza el slug de categoría normalizado del ticket (usado por matchmaking para sincronizar con el frontend).
+ * @param {number|string} ticketId - ID del ticket.
+ * @param {string} categorySlug - Slug oficial (ej. plomeria, electricidad).
+ * @returns {Promise<object|null>} Ticket actualizado o null.
+ */
+async function updateTicketCategorySlug(ticketId, categorySlug) {
+    const query = 'UPDATE tickets SET category_slug = $1 WHERE id = $2 RETURNING *;';
+    try {
+        const res = await pool.query(query, [categorySlug || null, ticketId]);
+        return res.rows[0] || null;
+    } catch (err) {
+        console.error('[DB] Error al actualizar category_slug:', err.message);
+        throw err;
+    }
+}
+
 module.exports = {
     saveTicket,
     getTickets,
@@ -408,6 +428,7 @@ module.exports = {
     getTicketsForGhostCheck,
     setGhostCheckSent,
     reopenTicketAfterGhost,
+    updateTicketCategorySlug,
     getUser,
     createUser,
     acceptTerms,

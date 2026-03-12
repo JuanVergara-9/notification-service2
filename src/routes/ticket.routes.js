@@ -121,8 +121,14 @@ router.post('/tickets/:id/assign', async (req, res) => {
             });
         }
 
-        const message = `¡Excelente elección! 🚀 Ya le avisé a ${providerName} sobre tu pedido. En los próximos minutos te va a escribir por acá para coordinar los detalles.`;
-        await sendWhatsAppText(ticket.phone_number, message);
+        const messageToClient = `¡Excelente elección! 🚀 Ya le avisé a ${providerName} sobre tu pedido. En los próximos minutos te va a escribir por acá para coordinar los detalles.`;
+        await sendWhatsAppText(ticket.phone_number, messageToClient);
+
+        if (providerPhone) {
+            const clientWa = String(ticket.phone_number).replace(/\D/g, '');
+            const messageToProvider = `¡Hola ${providerName}! Tenés un nuevo trabajo de ${ticket.category || 'servicio'} asignado. El cliente te está esperando. Hacé clic acá para escribirle: https://wa.me/${clientWa}`;
+            await sendWhatsAppText(providerPhone, messageToProvider);
+        }
 
         res.json({
             success: true,

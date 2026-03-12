@@ -15,8 +15,32 @@ const phoneNumberId = process.env.META_WA_PHONE_NUMBER_ID;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://miservicio.ar';
 
 /**
+ * Normaliza números de teléfono argentinos para enviar a la API de WhatsApp.
+ * @param {string|number} phone - Número en cualquier formato (local, 54..., 549..., etc.)
+ * @returns {string|null} Número limpio (ej. 5492604123456) o null si no hay número.
+ */
+function formatWhatsAppNumber(phone) {
+    if (!phone) return null;
+
+    let cleaned = phone.toString().replace(/\D/g, '');
+    if (cleaned.startsWith('0')) {
+        cleaned = cleaned.substring(1);
+    }
+    if (cleaned.startsWith('549') && cleaned.length === 13) {
+        return cleaned;
+    }
+    if (cleaned.startsWith('54') && cleaned.length === 12) {
+        return '549' + cleaned.substring(2);
+    }
+    if (cleaned.length === 10) {
+        return '549' + cleaned;
+    }
+    return cleaned;
+}
+
+/**
  * Envía un mensaje de texto al número indicado vía Meta WhatsApp Business API.
- * El número se normaliza quitando todo lo que no sea dígito (Meta espera solo números, sin +).
+ * El número se normaliza con formatWhatsAppNumber antes de enviar.
  *
  * @param {string} phoneNumber - Número en formato E.164 (ej. +5492604123456 o 5492604123456)
  * @param {string} body - Cuerpo del mensaje (texto plano)
@@ -27,16 +51,13 @@ async function sendWhatsAppText(phoneNumber, body) {
         return { success: false, error: 'META_WA_TOKEN or META_WA_PHONE_NUMBER_ID not configured' };
     }
 
-    // Meta espera "to" solo con dígitos (código país + número, sin + ni espacios).
-    let to = String(phoneNumber).replace(/\D/g, '');
-    if (!to) {
+    const formattedPhone = formatWhatsAppNumber(phoneNumber);
+    if (!formattedPhone) {
         return { success: false, error: 'Invalid phone number' };
     }
 
-    // Normalización de prefijos argentinos: Meta Allowed List usa '54', pero webhooks envían '549'.
-    if (to.startsWith('549')) {
-        to = '54' + to.slice(3);
-    }
+    // Meta Allowed List puede esperar 54 sin 9; se envía formateado y se ajusta si hace falta.
+    const to = formattedPhone.startsWith('549') ? '54' + formattedPhone.slice(3) : formattedPhone;
 
     try {
         const url = `${META_GRAPH_BASE}/${phoneNumberId}/messages`;
@@ -74,13 +95,12 @@ async function sendTermsInteractiveMessage(phoneNumber) {
         return { success: false, error: 'META_WA_TOKEN or META_WA_PHONE_NUMBER_ID not configured' };
     }
 
-    let to = String(phoneNumber).replace(/\D/g, '');
-
-    // Normalización de prefijos argentinos: Meta Allowed List usa '54', pero webhooks envían '549'.
-    if (to.startsWith('549')) {
-        to = '54' + to.slice(3);
+    const formattedPhone = formatWhatsAppNumber(phoneNumber);
+    if (!formattedPhone) {
+        return { success: false, error: 'Invalid phone number' };
     }
-    
+    const to = formattedPhone.startsWith('549') ? '54' + formattedPhone.slice(3) : formattedPhone;
+
     try {
         const url = `${META_GRAPH_BASE}/${phoneNumberId}/messages`;
         const { data } = await axios.post(
@@ -142,9 +162,9 @@ async function sendGhostCheckInteractiveMessage(phoneNumber, ticketId) {
         return { success: false, error: 'META_WA_TOKEN or META_WA_PHONE_NUMBER_ID not configured' };
     }
 
-    let to = String(phoneNumber).replace(/\D/g, '');
-    if (!to) return { success: false, error: 'Invalid phone number' };
-    if (to.startsWith('549')) to = '54' + to.slice(3);
+    const formattedPhone = formatWhatsAppNumber(phoneNumber);
+    if (!formattedPhone) return { success: false, error: 'Invalid phone number' };
+    const to = formattedPhone.startsWith('549') ? '54' + formattedPhone.slice(3) : formattedPhone;
 
     const idYes = `GHOST_YES_${ticketId}`;
     const idNo = `GHOST_NO_${ticketId}`;

@@ -15,7 +15,28 @@ const app = express();
 const PORT = process.env.PORT || 3005;
 
 app.set('trust proxy', 1);
-app.use(cors());
+
+// CORS: permitir frontend (miservicio.ar) y preflight para asignación de tickets
+// En producción conviene restringir: CORS_ORIGIN=https://miservicio.ar,https://www.miservicio.ar
+const corsOriginEnv = process.env.CORS_ORIGIN || process.env.CORS_ORIGINS;
+const originList = corsOriginEnv
+  ? corsOriginEnv.split(',').map(s => s.trim()).filter(Boolean)
+  : null; // null = permitir cualquier origen (temporal para probar preflight)
+const corsOptions = {
+  origin: originList
+    ? (origin, callback) => {
+        if (!origin) return callback(null, true);
+        if (originList.includes(origin)) return callback(null, true);
+        return callback(new Error('CORS not allowed'), false);
+      }
+    : true, // temporalmente permisivo para probar
+  methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key'],
+  credentials: true,
+  optionsSuccessStatus: 204
+};
+app.use(cors(corsOptions));
+
 app.use(helmet());
 app.use(express.json());
 app.use(morgan('short'));

@@ -307,23 +307,24 @@ async function completeTicket(ticketId, providerPhone) {
 }
 
 /**
- * Obtiene un ticket COMPLETADO con final_amount pendiente (NULL) para el teléfono del profesional.
- * @param {string} providerPhoneNormalized - Teléfono normalizado (solo dígitos, 54 para Argentina).
+ * Obtiene un ticket COMPLETADO con final_amount pendiente (NULL) cuyo provider_phone termina en los últimos 10 dígitos dados.
+ * Inmune a prefijos de país y códigos de área.
+ * @param {string} phoneSuffixLast10 - Últimos 10 dígitos del teléfono (solo dígitos, longitud 10).
  * @returns {Promise<object|null>} Ticket o null.
  */
-async function getPendingAmountTicketByProviderPhone(providerPhoneNormalized) {
+async function getPendingAmountTicketByProviderPhone(phoneSuffixLast10) {
+    const suffix = String(phoneSuffixLast10).replace(/\D/g, '').slice(-10);
+    if (suffix.length !== 10) return null;
+
     const query = `
-        SELECT * FROM tickets 
+        SELECT * FROM tickets
         WHERE status = 'COMPLETADO' AND final_amount IS NULL AND provider_phone IS NOT NULL
+          AND REGEXP_REPLACE(provider_phone, '[^0-9]', '', 'g') LIKE '%' || $1
         ORDER BY id DESC LIMIT 50;
     `;
     try {
-        const res = await pool.query(query);
-        for (const row of res.rows) {
-            const stored = normalizePhoneForLedger(row.provider_phone);
-            if (stored === providerPhoneNormalized) return row;
-        }
-        return null;
+        const res = await pool.query(query, [suffix]);
+        return res.rows[0] || null;
     } catch (err) {
         console.error('[DB] Error al buscar ticket pendiente de monto:', err.message);
         throw err;
@@ -356,23 +357,24 @@ function normalizePhoneForLedger(phone) {
 }
 
 /**
- * Obtiene un ticket COMPLETADO con final_amount ya registrado y client_rating pendiente (NULL) para el teléfono del cliente.
- * @param {string} clientPhoneNormalized - Teléfono del cliente normalizado (solo dígitos, 54 para Argentina).
+ * Obtiene un ticket COMPLETADO con final_amount y client_rating pendiente (NULL) cuyo phone_number termina en los últimos 10 dígitos dados.
+ * Inmune a prefijos de país y códigos de área.
+ * @param {string} phoneSuffixLast10 - Últimos 10 dígitos del teléfono del cliente (solo dígitos, longitud 10).
  * @returns {Promise<object|null>} Ticket o null.
  */
-async function getPendingReviewTicketByClientPhone(clientPhoneNormalized) {
+async function getPendingReviewTicketByClientPhone(phoneSuffixLast10) {
+    const suffix = String(phoneSuffixLast10).replace(/\D/g, '').slice(-10);
+    if (suffix.length !== 10) return null;
+
     const query = `
-        SELECT * FROM tickets 
+        SELECT * FROM tickets
         WHERE status = 'COMPLETADO' AND final_amount IS NOT NULL AND client_rating IS NULL
+          AND REGEXP_REPLACE(phone_number, '[^0-9]', '', 'g') LIKE '%' || $1
         ORDER BY id DESC LIMIT 50;
     `;
     try {
-        const res = await pool.query(query);
-        for (const row of res.rows) {
-            const stored = normalizePhoneForLedger(row.phone_number);
-            if (stored === clientPhoneNormalized) return row;
-        }
-        return null;
+        const res = await pool.query(query, [suffix]);
+        return res.rows[0] || null;
     } catch (err) {
         console.error('[DB] Error al buscar ticket pendiente de reseña:', err.message);
         throw err;

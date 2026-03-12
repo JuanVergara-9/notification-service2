@@ -1,6 +1,6 @@
 'use strict';
 
-const { getPendingReviewTicketByClientPhone, updateTicketClientRating, normalizePhoneForLedger } = require('./db.service');
+const { getPendingReviewTicketByClientPhone, updateTicketClientRating } = require('./db.service');
 const { sendWhatsAppText } = require('./whatsapp.service');
 
 const MSG_INVALID_RATING = 'Por favor, respondeme solo con un número del 1 al 5 para calificar el servicio.';
@@ -18,10 +18,11 @@ const MSG_THANKS_RATING = '¡Gracias por tu calificación! ⭐ Tus reseñas ayud
 async function checkAndProcessClientReview(from, text) {
     if (!from || typeof text !== 'string') return false;
 
-    const normalized = normalizePhoneForLedger(from);
-    if (!normalized) return false;
+    const digits = String(from).replace(/\D/g, '');
+    const phoneSuffix = digits.slice(-10);
+    if (phoneSuffix.length !== 10) return false;
 
-    const ticket = await getPendingReviewTicketByClientPhone(normalized);
+    const ticket = await getPendingReviewTicketByClientPhone(phoneSuffix);
     if (!ticket) return false;
 
     const trimmed = text.trim();
@@ -35,7 +36,7 @@ async function checkAndProcessClientReview(from, text) {
     await updateTicketClientRating(ticket.id, rating);
     await sendWhatsAppText(from, MSG_THANKS_RATING);
 
-    console.log('[Review] Calificación registrada.', { ticketId: ticket.id, clientRating: rating, clientPhone: normalized });
+    console.log('[Review] Calificación registrada.', { ticketId: ticket.id, clientRating: rating, clientSuffix: phoneSuffix });
     return true;
 }
 

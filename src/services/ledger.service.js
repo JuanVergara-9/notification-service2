@@ -1,6 +1,6 @@
 'use strict';
 
-const { getPendingAmountTicketByProviderPhone, updateTicketFinalAmount, normalizePhoneForLedger } = require('./db.service');
+const { getPendingAmountTicketByProviderPhone, updateTicketFinalAmount } = require('./db.service');
 const { sendWhatsAppText } = require('./whatsapp.service');
 
 const MSG_ASK_AMOUNT = 'Por favor, respondeme solo con el número del monto que cobraste (ej: 15000).';
@@ -19,11 +19,12 @@ const MSG_ASK_CLIENT_RATING = '¡Hola! Vimos que el servicio con tu profesional 
 async function checkAndProcessProviderAmount(phoneNumber, messageText) {
     if (!phoneNumber || typeof messageText !== 'string') return false;
 
-    const normalized = normalizePhoneForLedger(phoneNumber);
-    if (!normalized) return false;
+    const digits = String(phoneNumber).replace(/\D/g, '');
+    const phoneSuffix = digits.slice(-10);
+    if (phoneSuffix.length !== 10) return false;
 
-    // Paso A + B: Ticket pendiente de cobro para este profesional
-    const ticket = await getPendingAmountTicketByProviderPhone(normalized);
+    // Paso A + B: Ticket pendiente de cobro para este profesional (búsqueda por últimos 10 dígitos)
+    const ticket = await getPendingAmountTicketByProviderPhone(phoneSuffix);
     if (!ticket) return false;
 
     const text = messageText.trim();
@@ -60,7 +61,7 @@ async function checkAndProcessProviderAmount(phoneNumber, messageText) {
         await sendWhatsAppText(clientPhone, MSG_ASK_CLIENT_RATING);
     }
 
-    console.log('[Ledger] GMV registrado.', { ticketId: ticket.id, amount: formattedAmount, providerPhone: normalized });
+    console.log('[Ledger] GMV registrado.', { ticketId: ticket.id, amount: formattedAmount, providerSuffix: phoneSuffix });
     return true;
 }
 

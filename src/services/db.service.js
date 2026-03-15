@@ -77,6 +77,18 @@ const initDB = async () => {
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='tickets' AND column_name='category_slug') THEN
                     ALTER TABLE tickets ADD COLUMN category_slug VARCHAR(100);
                 END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='tickets' AND column_name='provider_responded_at') THEN
+                    ALTER TABLE tickets ADD COLUMN provider_responded_at TIMESTAMP;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='tickets' AND column_name='completed_at') THEN
+                    ALTER TABLE tickets ADD COLUMN completed_at TIMESTAMP;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='tickets' AND column_name='amount_reported_at') THEN
+                    ALTER TABLE tickets ADD COLUMN amount_reported_at TIMESTAMP;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='tickets' AND column_name='cancellation_reason') THEN
+                    ALTER TABLE tickets ADD COLUMN cancellation_reason VARCHAR(255);
+                END IF;
             END $$;
         `;
         await pool.query(checkCols);
@@ -200,11 +212,15 @@ async function getTicketById(id) {
 
 /**
  * Actualiza el estado de un ticket.
+ * Si newStatus es COMPLETADO, setea también completed_at = NOW() para scoring.
  * @param {number} id - ID del ticket.
  * @param {string} newStatus - Nuevo estado (ABIERTO, ASIGNADO, COMPLETADO, CANCELADO).
  */
 async function updateTicketStatus(id, newStatus) {
-    const query = 'UPDATE tickets SET status = $1 WHERE id = $2 RETURNING *;';
+    const isCompleted = (newStatus || '').toUpperCase() === 'COMPLETADO';
+    const query = isCompleted
+        ? 'UPDATE tickets SET status = $1, completed_at = NOW() WHERE id = $2 RETURNING *;'
+        : 'UPDATE tickets SET status = $1 WHERE id = $2 RETURNING *;';
     try {
         const res = await pool.query(query, [newStatus, id]);
         return res.rows[0];
@@ -291,12 +307,13 @@ async function reopenTicketAfterGhost(ticketId) {
 
 /**
  * Marca un ticket como COMPLETADO y guarda el teléfono del profesional para el Shadow Ledger.
+ * Setea completed_at = NOW() para scoring.
  * @param {number|string} ticketId - ID del ticket.
  * @param {string} providerPhone - Teléfono WhatsApp del profesional (E.164).
  * @returns {Promise<object|null>} Ticket actualizado o null.
  */
 async function completeTicket(ticketId, providerPhone) {
-    const query = 'UPDATE tickets SET status = $1, provider_phone = $2 WHERE id = $3 RETURNING *;';
+    const query = 'UPDATE tickets SET status = $1, provider_phone = $2, completed_at = NOW() WHERE id = $3 RETURNING *;';
     try {
         const res = await pool.query(query, ['COMPLETADO', providerPhone || null, ticketId]);
         return res.rows[0] || null;
@@ -332,13 +349,13 @@ async function getPendingAmountTicketByProviderPhone(phoneSuffixLast10) {
 }
 
 /**
- * Actualiza el monto final (GMV) de un ticket.
+ * Actualiza el monto final (GMV) de un ticket. Setea amount_reported_at = NOW() para scoring (Shadow Ledger).
  * @param {number|string} ticketId - ID del ticket.
  * @param {number} amount - Monto a registrar.
  * @returns {Promise<object|null>} Ticket actualizado o null.
  */
 async function updateTicketFinalAmount(ticketId, amount) {
-    const query = 'UPDATE tickets SET final_amount = $1 WHERE id = $2 RETURNING *;';
+    const query = 'UPDATE tickets SET final_amount = $1, amount_reported_at = NOW() WHERE id = $2 RETURNING *;';
     try {
         const res = await pool.query(query, [amount, ticketId]);
         return res.rows[0] || null;

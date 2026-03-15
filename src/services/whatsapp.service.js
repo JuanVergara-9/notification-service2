@@ -203,4 +203,4 @@ async function sendGhostCheckInteractiveMessage(phoneNumber, ticketId) {
     }
 }
 
-module.exports = { sendWhatsAppText, sendTermsInteractiveMessage, sendMatchResultsMessage, sendGhostCheckInteractiveMessage };
+module.exports = { formatWhatsAppNumber, sendWhatsAppText, sendTermsInteractiveMessage, sendMatchResultsMessage, sendGhostCheckInteractiveMessage };

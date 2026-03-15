@@ -1,7 +1,7 @@
 'use strict';
 
 const router = require('express').Router();
-const { sendWhatsAppText, sendTermsInteractiveMessage, sendMatchResultsMessage } = require('../services/whatsapp.service');
+const { formatWhatsAppNumber, sendWhatsAppText, sendTermsInteractiveMessage, sendMatchResultsMessage } = require('../services/whatsapp.service');
 const { analyzeMessage } = require('../services/ai.service');
 const { saveTicket, getUser, createUser, acceptTerms, CURRENT_TERMS_VERSION, getTicketById, reopenTicketAfterGhost } = require('../services/db.service');
 const { findMatchingProviders } = require('../services/matchmaking.service');
@@ -10,7 +10,6 @@ const { checkAndProcessClientReview } = require('../services/review.service');
 const { getProviderWhatsAppNumber } = require('../services/provider-client.service');
 
 const WEBHOOK_VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN || '';
-const WEBHOOK_ALLOWED_NUMBER = process.env.WEBHOOK_ALLOWED_NUMBER || ''; // Número con código de país (ej. 5492604800958)
 
 /**
  * GET /webhook - Verificación del webhook por Meta (WhatsApp Business API).
@@ -31,7 +30,7 @@ router.get('/webhook', (req, res) => {
 
 /**
  * POST /webhook - Recepción de mensajes entrantes de WhatsApp.
- * Solo se procesa si el remitente está en la lista permitida (WEBHOOK_ALLOWED_NUMBER).
+ * Acepta mensajes de cualquier número; el remitente se normaliza con formatWhatsAppNumber (549...) para la base de datos.
  */
 router.post('/webhook', async (req, res) => {
     // Meta exige respuesta 200 rápido; procesamos después
@@ -46,7 +45,7 @@ router.post('/webhook', async (req, res) => {
         }
 
         const first = messages[0];
-        const from = first.from;
+        const from = formatWhatsAppNumber(first.from) || first.from;
         const text = (first.type === 'text' && first.text?.body) ? first.text.body : '';
         const interactive = first.type === 'interactive' ? first.interactive : null;
 
@@ -67,7 +66,7 @@ router.post('/webhook', async (req, res) => {
             }
         }
 
-        // --- Interceptor Anti-Ghosting (botones GHOST_YES_ / GHOST_NO_) - antes del allowed number ---
+        // --- Interceptor Anti-Ghosting (botones GHOST_YES_ / GHOST_NO_) ---
         if (interactive) {
             const buttonId = interactive.button_reply?.id || '';
             const metaRecipient = from.startsWith('549') ? '54' + from.slice(3) : from;
@@ -93,11 +92,6 @@ router.post('/webhook', async (req, res) => {
                 }
                 return;
             }
-        }
-
-        if (!WEBHOOK_ALLOWED_NUMBER || from !== WEBHOOK_ALLOWED_NUMBER) {
-            console.log('[Webhook] Remitente no autorizado, no se procesa.', { from, allowed: WEBHOOK_ALLOWED_NUMBER });
-            return;
         }
 
         // --- FASE 3: Legal Gatekeeper Interceptor ---

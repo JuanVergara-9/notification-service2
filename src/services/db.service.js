@@ -432,6 +432,35 @@ async function updateTicketCategorySlug(ticketId, categorySlug) {
     }
 }
 
+/**
+ * Métricas de salud del Shadow Ledger (últimos 30 días).
+ * Tickets COMPLETADOS con completed_at >= thirtyDaysAgo.
+ * @returns {Promise<{ activeWorkers: number, totalTransactions: number, gmv: number }>}
+ */
+async function getShadowLedgerHealthMetrics() {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const query = `
+        SELECT
+            COUNT(*)::int AS total_transactions,
+            COALESCE(SUM(final_amount), 0)::numeric AS gmv,
+            COUNT(DISTINCT provider_id) FILTER (WHERE provider_id IS NOT NULL)::int AS active_workers
+        FROM tickets
+        WHERE status = 'COMPLETADO' AND completed_at >= $1
+    `;
+    try {
+        const res = await pool.query(query, [thirtyDaysAgo]);
+        const row = res.rows[0];
+        return {
+            activeWorkers: row?.active_workers ?? 0,
+            totalTransactions: row?.total_transactions ?? 0,
+            gmv: Number(row?.gmv ?? 0)
+        };
+    } catch (err) {
+        console.error('[DB] Error en getShadowLedgerHealthMetrics:', err.message);
+        throw err;
+    }
+}
+
 module.exports = {
     saveTicket,
     getTickets,
@@ -448,6 +477,7 @@ module.exports = {
     setGhostCheckSent,
     reopenTicketAfterGhost,
     updateTicketCategorySlug,
+    getShadowLedgerHealthMetrics,
     getUser,
     createUser,
     acceptTerms,

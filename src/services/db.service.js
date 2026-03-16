@@ -433,6 +433,96 @@ async function updateTicketCategorySlug(ticketId, categorySlug) {
 }
 
 /**
+ * Métricas de comportamiento (últimos 30 días).
+ * Calculadas en memoria a partir de los tickets recientes.
+ * @returns {Promise<{ avgResponseTimeMinutes: number | null, ghostingRate: number, punctualityRate: number }>}
+ */
+async function getBehavioralMetrics() {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+    const query = `
+        SELECT
+            status,
+            assigned_at,
+            provider_responded_at,
+            completed_at,
+            amount_reported_at
+        FROM tickets
+        WHERE created_at >= $1
+    `;
+
+    try {
+        const res = await pool.query(query, [thirtyDaysAgo]);
+        const tickets = res.rows || [];
+
+        // Avg Response Time (en minutos)
+        const responseDiffs = tickets
+            .filter(t => t.assigned_at && t.provider_responded_at)
+            .map(t => {
+                const assigned = new Date(t.assigned_at);
+                const responded = new Date(t.provider_responded_at);
+                const diffMinutes = (responded.getTime() - assigned.getTime()) / (1000 * 60);
+                return diffMinutes;
+            })
+            .filter(d => Number.isFinite(d) && d >= 0);
+
+        const avgResponseTimeMinutes =
+            responseDiffs.length > 0
+                ? Number(
+                      (responseDiffs.reduce((sum, v) => sum + v, 0) / responseDiffs.length).toFixed(1)
+                  )
+                : null;
+
+        // Ghosting Rate
+        const ticketsWithAssigned = tickets.filter(t => t.assigned_at);
+        const totalWithAssigned = ticketsWithAssigned.length;
+
+        const ghostedCount = ticketsWithAssigned.filter(t => {
+            const status = (t.status || '').toUpperCase();
+            const isCancelled = status === 'CANCELADO';
+            const neverResponded = !t.provider_responded_at;
+            return isCancelled || neverResponded;
+        }).length;
+
+        const ghostingRate =
+            totalWithAssigned > 0
+                ? Number(((ghostedCount / totalWithAssigned) * 100).toFixed(1))
+                : 0;
+
+        // Reporting Punctuality
+        const completedWithReport = tickets.filter(
+            t => t.completed_at && t.amount_reported_at
+        );
+        const totalCompleted = completedWithReport.length;
+
+        const punctualCount = completedWithReport.filter(t => {
+            const completed = new Date(t.completed_at);
+            const reported = new Date(t.amount_reported_at);
+            const diffHours = (reported.getTime() - completed.getTime()) / (1000 * 60 * 60);
+            return Number.isFinite(diffHours) && diffHours >= 0 && diffHours < 24;
+        }).length;
+
+        const punctualityRate =
+            totalCompleted > 0
+                ? Number(((punctualCount / totalCompleted) * 100).toFixed(1))
+                : 0;
+
+        return {
+            avgResponseTimeMinutes,
+            ghostingRate,
+            punctualityRate
+        };
+    } catch (err) {
+        console.error('[DB] Error en getBehavioralMetrics:', err.message);
+        return {
+            avgResponseTimeMinutes: null,
+            ghostingRate: 0,
+            punctualityRate: 0
+        };
+    }
+}
+
+/**
  * Métricas de salud del Shadow Ledger (últimos 30 días).
  * Tickets COMPLETADOS con completed_at >= thirtyDaysAgo.
  * @returns {Promise<{ activeWorkers: number, totalTransactions: number, gmv: number }>}
@@ -462,6 +552,7 @@ async function getShadowLedgerHealthMetrics() {
 }
 
 module.exports = {
+    getBehavioralMetrics,
     saveTicket,
     getTickets,
     getTicketById,

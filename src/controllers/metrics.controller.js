@@ -1,6 +1,6 @@
 'use strict';
 
-const { getShadowLedgerHealthMetrics } = require('../services/db.service');
+const { getShadowLedgerHealthMetrics, getBehavioralMetrics } = require('../services/db.service');
 
 /**
  * GET Shadow Ledger Health (Nivel 1).
@@ -24,4 +24,24 @@ async function getShadowLedgerHealth(_req, res) {
     }
 }
 
-module.exports = { getShadowLedgerHealth };
+/**
+ * GET Behavioral Signals (Nivel 1).
+ * Devuelve métricas agregadas de comportamiento de los últimos 30 días.
+ */
+async function getBehavioralSignals(_req, res) {
+    try {
+        const metrics = await getBehavioralMetrics();
+        res.json({
+            avgResponseTimeMinutes: metrics.avgResponseTimeMinutes,
+            ghostingRate: metrics.ghostingRate,
+            punctualityRate: metrics.punctualityRate
+        });
+    } catch (err) {
+        console.error('[Metrics] getBehavioralSignals:', err.message);
+        res.status(500).json({
+            error: 'Error al obtener señales de comportamiento'
+        });
+    }
+}
+
+module.exports = { getShadowLedgerHealth, getBehavioralSignals };

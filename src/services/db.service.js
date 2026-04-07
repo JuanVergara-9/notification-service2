@@ -551,8 +551,104 @@ async function getShadowLedgerHealthMetrics() {
     }
 }
 
+/**
+ * Scoring crediticio / perfil financiero individual de un trabajador.
+ * Calcula métricas transaccionales, de retención y de comportamiento
+ * a partir de todos los tickets asociados al providerId dado.
+ *
+ * @param {number|string} providerId
+ * @returns {Promise<{
+ *   totalCompletedJobs: number,
+ *   totalGMV: number,
+ *   ticketPromedio: number | null,
+ *   daysSinceLastJob: number | null,
+ *   ghostingRate: number,
+ *   avgResponseTimeMinutes: number | null
+ * }>}
+ */
+async function getIndividualWorkerScoring(providerId) {
+    const query = `
+        SELECT
+            status,
+            final_amount,
+            completed_at,
+            assigned_at,
+            provider_responded_at
+        FROM tickets
+        WHERE provider_id = $1
+    `;
+
+    try {
+        const res = await pool.query(query, [providerId]);
+        const tickets = res.rows || [];
+
+        /* ── Transaccional ── */
+        const completed = tickets.filter(t => (t.status || '').toUpperCase() === 'COMPLETADO');
+
+        const totalCompletedJobs = completed.length;
+
+        const totalGMV = completed.reduce((sum, t) => {
+            const amt = parseFloat(t.final_amount);
+            return sum + (Number.isFinite(amt) ? amt : 0);
+        }, 0);
+
+        const ticketPromedio = totalCompletedJobs > 0
+            ? Number((totalGMV / totalCompletedJobs).toFixed(2))
+            : null;
+
+        /* ── Retención ── */
+        const completedWithDate = completed
+            .filter(t => t.completed_at)
+            .map(t => new Date(t.completed_at).getTime());
+
+        let daysSinceLastJob = null;
+        if (completedWithDate.length > 0) {
+            const lastJobMs = Math.max(...completedWithDate);
+            daysSinceLastJob = Math.floor((Date.now() - lastJobMs) / (1000 * 60 * 60 * 24));
+        }
+
+        /* ── Comportamiento ── */
+        const assigned = tickets.filter(t => t.assigned_at);
+        const totalAssigned = assigned.length;
+
+        const ghosted = assigned.filter(t => {
+            const status = (t.status || '').toUpperCase();
+            return status === 'CANCELADO' || !t.provider_responded_at;
+        }).length;
+
+        const ghostingRate = totalAssigned > 0
+            ? Number(((ghosted / totalAssigned) * 100).toFixed(1))
+            : 0;
+
+        const responseDiffs = assigned
+            .filter(t => t.provider_responded_at)
+            .map(t => {
+                const diff = (new Date(t.provider_responded_at) - new Date(t.assigned_at)) / (1000 * 60);
+                return diff;
+            })
+            .filter(d => Number.isFinite(d) && d >= 0);
+
+        const avgResponseTimeMinutes = responseDiffs.length > 0
+            ? Number((responseDiffs.reduce((s, v) => s + v, 0) / responseDiffs.length).toFixed(1))
+            : null;
+
+        return {
+            totalCompletedJobs,
+            totalGMV: Number(totalGMV.toFixed(2)),
+            ticketPromedio,
+            daysSinceLastJob,
+            ghostingRate,
+            avgResponseTimeMinutes
+        };
+    } catch (err) {
+        console.error('[DB] Error en getIndividualWorkerScoring:', err.message);
+        throw err;
+    }
+}
+
 module.exports = {
     getBehavioralMetrics,
+    getIndividualWorkerScoring,
     saveTicket,
     getTickets,
     getTicketById,

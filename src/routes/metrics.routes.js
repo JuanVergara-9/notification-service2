@@ -1,7 +1,7 @@
 'use strict';
 
 const router = require('express').Router();
-const { getShadowLedgerHealth, getBehavioralSignals } = require('../controllers/metrics.controller');
+const { getShadowLedgerHealth, getBehavioralSignals, getWorkerFinancialProfile } = require('../controllers/metrics.controller');
 
 /**
  * GET /api/v1/metrics/shadow-ledger-health
@@ -14,5 +14,13 @@ router.get('/shadow-ledger-health', getShadowLedgerHealth);
  * Señales de comportamiento agregadas (últimos 30 días).
  */
 router.get('/behavioral-signals', getBehavioralSignals);
+
+/**
+ * GET /api/v1/metrics/worker-scoring/:id
+ * Scoring crediticio / perfil financiero individual de un trabajador.
+ * Parámetro: id = provider_id del trabajador.
+ * Retorna: totalCompletedJobs, totalGMV, ticketPromedio, daysSinceLastJob, ghostingRate, avgResponseTimeMinutes.
+ */
+router.get('/worker-scoring/:id', getWorkerFinancialProfile);
 
 module.exports = router;

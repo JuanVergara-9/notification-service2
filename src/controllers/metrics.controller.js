@@ -1,6 +1,6 @@
 'use strict';
 
-const { getShadowLedgerHealthMetrics, getBehavioralMetrics } = require('../services/db.service');
+const { getShadowLedgerHealthMetrics, getBehavioralMetrics, getIndividualWorkerScoring } = require('../services/db.service');
 
 /**
  * GET Shadow Ledger Health (Nivel 1).
@@ -44,4 +44,23 @@ async function getBehavioralSignals(_req, res) {
     }
 }
 
-module.exports = { getShadowLedgerHealth, getBehavioralSignals };
+/**
+ * GET /api/v1/metrics/worker-scoring/:id
+ * Perfil financiero / scoring crediticio individual de un trabajador.
+ * Devuelve métricas transaccionales, de retención y de comportamiento.
+ */
+async function getWorkerFinancialProfile(req, res) {
+    const providerId = req.params.id;
+    if (!providerId || isNaN(Number(providerId))) {
+        return res.status(400).json({ error: 'providerId inválido' });
+    }
+    try {
+        const metrics = await getIndividualWorkerScoring(Number(providerId));
+        res.json(metrics);
+    } catch (err) {
+        console.error('[Metrics] getWorkerFinancialProfile:', err.message);
+        res.status(500).json({ error: 'Error al obtener el scoring del trabajador' });
+    }
+}
+
+module.exports = { getShadowLedgerHealth, getBehavioralSignals, getWorkerFinancialProfile };

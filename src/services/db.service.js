@@ -566,6 +566,40 @@ async function getShadowLedgerHealthMetrics() {
  *   avgResponseTimeMinutes: number | null
  * }>}
  */
+/**
+ * Lista de trabajadores activos (últimos 30 días) con sus métricas básicas.
+ * Usado para el listado del dashboard general (Nivel 1 → Nivel 2).
+ * @returns {Promise<Array<{ provider_id, provider_name, total_transactions, gmv }>>}
+ */
+async function getActiveWorkersList() {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const query = `
+        SELECT
+            provider_id,
+            provider_name,
+            COUNT(*)::int AS total_transactions,
+            COALESCE(SUM(final_amount), 0)::numeric AS gmv
+        FROM tickets
+        WHERE status = 'COMPLETADO'
+          AND completed_at >= $1
+          AND provider_id IS NOT NULL
+        GROUP BY provider_id, provider_name
+        ORDER BY gmv DESC
+    `;
+    try {
+        const res = await pool.query(query, [thirtyDaysAgo]);
+        return res.rows.map(r => ({
+            provider_id: r.provider_id,
+            provider_name: r.provider_name || `Trabajador #${r.provider_id}`,
+            total_transactions: r.total_transactions,
+            gmv: Number(r.gmv)
+        }));
+    } catch (err) {
+        console.error('[DB] Error en getActiveWorkersList:', err.message);
+        throw err;
+    }
+}
+
 async function getIndividualWorkerScoring(providerId) {
     const query = `
         SELECT
@@ -648,6 +682,7 @@ async function getIndividualWorkerScoring(providerId) {
 
 module.exports = {
     getBehavioralMetrics,
+    getActiveWorkersList,
     getIndividualWorkerScoring,
     saveTicket,
     getTickets,

@@ -1,7 +1,7 @@
 'use strict';
 
 const router = require('express').Router();
-const { getShadowLedgerHealth, getBehavioralSignals, getWorkerFinancialProfile } = require('../controllers/metrics.controller');
+const { getShadowLedgerHealth, getBehavioralSignals, getWorkerFinancialProfile, getActiveWorkers } = require('../controllers/metrics.controller');
 
 /**
  * GET /api/v1/metrics/shadow-ledger-health
@@ -22,5 +22,11 @@ router.get('/behavioral-signals', getBehavioralSignals);
  * Retorna: totalCompletedJobs, totalGMV, ticketPromedio, daysSinceLastJob, ghostingRate, avgResponseTimeMinutes.
  */
 router.get('/worker-scoring/:id', getWorkerFinancialProfile);
+
+/**
+ * GET /api/v1/metrics/active-workers
+ * Lista de trabajadores activos (30d) con GMV y transacciones, para el dashboard general.
+ */
+router.get('/active-workers', getActiveWorkers);
 
 module.exports = router;

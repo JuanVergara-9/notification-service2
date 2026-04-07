@@ -1,6 +1,6 @@
 'use strict';
 
-const { getShadowLedgerHealthMetrics, getBehavioralMetrics, getIndividualWorkerScoring } = require('../services/db.service');
+const { getShadowLedgerHealthMetrics, getBehavioralMetrics, getIndividualWorkerScoring, getActiveWorkersList } = require('../services/db.service');
 
 /**
  * GET Shadow Ledger Health (Nivel 1).
@@ -63,4 +63,18 @@ async function getWorkerFinancialProfile(req, res) {
     }
 }
 
-module.exports = { getShadowLedgerHealth, getBehavioralSignals, getWorkerFinancialProfile };
+/**
+ * GET /api/v1/metrics/active-workers
+ * Lista de trabajadores activos en los últimos 30 días con GMV y transacciones.
+ */
+async function getActiveWorkers(_req, res) {
+    try {
+        const workers = await getActiveWorkersList();
+        res.json({ workers });
+    } catch (err) {
+        console.error('[Metrics] getActiveWorkers:', err.message);
+        res.status(500).json({ error: 'Error al obtener lista de trabajadores' });
+    }
+}
+
+module.exports = { getShadowLedgerHealth, getBehavioralSignals, getWorkerFinancialProfile, getActiveWorkers };

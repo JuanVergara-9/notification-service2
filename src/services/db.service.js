@@ -645,13 +645,21 @@ async function getIndividualWorkerScoring(providerId) {
         const assigned = tickets.filter(t => t.assigned_at);
         const totalAssigned = assigned.length;
 
-        const ghosted = assigned.filter(t => {
+        // Ghosting estricto: solo cuenta como fantasma si el ticket fue CANCELADO
+        // y además nunca hubo respuesta del trabajador. Los tickets COMPLETADO /
+        // ACEPTADO / EN_PROGRESO (o similares exitosos) se excluyen explícitamente
+        // para evitar falsos positivos con registros históricos sin timestamp de respuesta.
+        let ghostedTickets = 0;
+        assigned.forEach(t => {
             const status = (t.status || '').toUpperCase();
-            return status === 'CANCELADO' || !t.provider_responded_at;
-        }).length;
+            const isSafeStatus = ['COMPLETADO', 'ACEPTADO', 'EN_PROGRESO'].includes(status);
+            if (!isSafeStatus && status === 'CANCELADO' && !t.provider_responded_at) {
+                ghostedTickets++;
+            }
+        });
 
         const ghostingRate = totalAssigned > 0
-            ? Number(((ghosted / totalAssigned) * 100).toFixed(1))
+            ? parseFloat(((ghostedTickets / totalAssigned) * 100).toFixed(1))
             : 0;
 
         const responseDiffs = assigned

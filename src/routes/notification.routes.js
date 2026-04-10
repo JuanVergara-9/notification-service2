@@ -154,7 +154,7 @@ router.post('/webhook', async (req, res) => {
                     return; // Importante: No enviar la respuesta genérica de Gemini si ya enviamos el link
                 } else {
                     console.log('[Matchmaking] No se encontraron profesionales que coincidan exactamente.');
-                    const noMatchesMsg = "Ya registré tu pedido, pero en este momento no tengo profesionales disponibles en esa zona. Lo dejo abierto y te aviso apenas se conecte uno.";
+                    const noMatchesMsg = "Perdón, por el momento no tenemos profesionales verificados disponibles para ese rubro en tu zona.";
                     await sendWhatsAppText(metaRecipient, noMatchesMsg);
                     return; // No enviar respuesta genérica
                 }

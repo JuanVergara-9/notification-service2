@@ -143,6 +143,8 @@ async function findMatchingProviders(ticketData, ticketId) {
             city: cityForSearch,
             urgency: urgency,
             status: 'active',
+            /** Solo profesionales con identidad verificada (VIP) para el bot de WhatsApp */
+            identityStatus: 'verified',
             limit: 10
         };
         if (apiCategorySlug) params.categorySlug = apiCategorySlug;
@@ -170,7 +172,7 @@ async function findMatchingProviders(ticketData, ticketId) {
         let providers = response.data.items;
         const total = response.data.count != null ? response.data.count : providers.length;
         if (providers.length === 0) {
-            console.log(`[Matchmaking] Provider-service OK pero 0 resultados (count=${total}). Revisa que haya proveedores activos para categoría "${category}" y ciudad "${zone}".`);
+            console.log(`[Matchmaking] Provider-service OK pero 0 resultados (count=${total}). Sin proveedores activos y verificados para categoría "${category}" y ciudad "${zone}".`);
             return [];
         }
 

@@ -8,8 +8,116 @@ const { findMatchingProviders } = require('../services/matchmaking.service');
 const { checkAndProcessProviderAmount } = require('../services/ledger.service');
 const { checkAndProcessClientReview } = require('../services/review.service');
 const { getProviderWhatsAppNumber } = require('../services/provider-client.service');
+const { whatsappLimiter } = require('../middlewares/whatsappLimiter.middleware');
 
 const WEBHOOK_VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN || '';
+const DEBOUNCE_MS = 2_000;
+const messageBuffers = new Map();
+const messageTimers = new Map();
+const inFlightUsers = new Set();
+
+function enqueueDebouncedMessage(from, text) {
+    if (!text || typeof text !== 'string' || !text.trim()) {
+        return;
+    }
+
+    const currentBuffer = messageBuffers.get(from);
+    const nextBuffer = currentBuffer ? `${currentBuffer}\n${text}` : text;
+    messageBuffers.set(from, nextBuffer);
+
+    const activeTimer = messageTimers.get(from);
+    if (activeTimer) {
+        clearTimeout(activeTimer);
+    }
+
+    const timer = setTimeout(() => {
+        messageTimers.delete(from);
+        flushBufferedMessages(from).catch((err) => {
+            console.error('[Debounce] Error al procesar buffer:', err.message);
+        });
+    }, DEBOUNCE_MS);
+    messageTimers.set(from, timer);
+}
+
+async function flushBufferedMessages(from) {
+    if (inFlightUsers.has(from)) {
+        return;
+    }
+
+    const fullText = messageBuffers.get(from);
+    if (!fullText) {
+        return;
+    }
+
+    messageBuffers.delete(from);
+    inFlightUsers.add(from);
+
+    try {
+        const result = await analyzeMessage(from, fullText);
+        console.log('[Gemini] Análisis completado.', JSON.stringify(result));
+
+        // Fase 3.2: Persistencia en PostgreSQL si el ticket está completo
+        if (result && result.isComplete && result.extractedData) {
+            try {
+                console.log('[Webhook] Ticket completo detectado, guardando en DB...');
+                const ticketId = await saveTicket(from, result.extractedData, 'whatsapp');
+
+                // --- NUEVO: Motor de Matchmaking ---
+                console.log('[Webhook] Iniciando Matchmaking...');
+                const matches = await findMatchingProviders(result.extractedData, ticketId);
+                
+                // Normalización definitiva para Argentina: Meta API Cloud rechaza el '9' en envíos
+                const metaRecipient = from.startsWith('549') ? '54' + from.slice(3) : from;
+
+                if (matches && matches.length > 0) {
+                    console.log(`[Matchmaking] ¡Éxito! Se encontraron ${matches.length} profesionales:`, 
+                        matches.map(m => `${m.name} (${m.is_pro ? 'PRO' : 'Normal'})`).join(', ')
+                    );
+                    
+                    // Enviar el Magic Link al usuario
+                    await sendMatchResultsMessage(metaRecipient, matches.length, ticketId);
+                    console.log('[Webhook] Magic Link enviado a WhatsApp.');
+                    return; // Importante: No enviar la respuesta genérica de Gemini si ya enviamos el link
+                } else {
+                    console.log('[Matchmaking] No se encontraron profesionales que coincidan exactamente.');
+                    const noMatchesMsg = "Perdón, por el momento no tenemos profesionales verificados disponibles para ese rubro en tu zona.";
+                    await sendWhatsAppText(metaRecipient, noMatchesMsg);
+                    return; // No enviar respuesta genérica
+                }
+                // --- FIN Matchmaking ---
+
+            } catch (dbErr) {
+                console.error('[Webhook] Error en persistencia o matchmaking:', dbErr.message);
+            }
+        }
+
+        // Fase 2: Responder al usuario por WhatsApp
+        if (result && !result.error && result.replyToClient) {
+            const mensajeAEnviar = result.replyToClient;
+            
+            try {
+                // Normalización definitiva para Argentina: Meta API Cloud rechaza el '9' en envíos
+                const metaRecipient = from.startsWith('549') ? '54' + from.slice(3) : from;
+                
+                await sendWhatsAppText(metaRecipient, mensajeAEnviar);
+                console.log('[Webhook] Respuesta enviada a WhatsApp a:', metaRecipient);
+            } catch (sendErr) {
+                console.error('[Webhook] Error enviando respuesta a WhatsApp:', sendErr.message);
+            }
+        }
+    } finally {
+        inFlightUsers.delete(from);
+        if (messageBuffers.has(from) && !messageTimers.has(from)) {
+            const timer = setTimeout(() => {
+                messageTimers.delete(from);
+                flushBufferedMessages(from).catch((err) => {
+                    console.error('[Debounce] Error al reprocesar buffer:', err.message);
+                });
+            }, DEBOUNCE_MS);
+            messageTimers.set(from, timer);
+        }
+    }
+}
 
 /**
  * GET /webhook - Verificación del webhook por Meta (WhatsApp Business API).
@@ -32,7 +140,7 @@ router.get('/webhook', (req, res) => {
  * POST /webhook - Recepción de mensajes entrantes de WhatsApp.
  * Acepta mensajes de cualquier número; el remitente se normaliza con formatWhatsAppNumber (549...) para la base de datos.
  */
-router.post('/webhook', async (req, res) => {
+router.post('/webhook', whatsappLimiter, async (req, res) => {
     // Meta exige respuesta 200 rápido; procesamos después
     res.sendStatus(200);
 
@@ -127,58 +235,7 @@ router.post('/webhook', async (req, res) => {
 
         // --- FIN Legal Gatekeeper ---
 
-        const result = await analyzeMessage(from, text);
-        console.log('[Gemini] Análisis completado.', JSON.stringify(result));
-
-        // Fase 3.2: Persistencia en PostgreSQL si el ticket está completo
-        if (result && result.isComplete && result.extractedData) {
-            try {
-                console.log('[Webhook] Ticket completo detectado, guardando en DB...');
-                const ticketId = await saveTicket(from, result.extractedData, 'whatsapp');
-
-                // --- NUEVO: Motor de Matchmaking ---
-                console.log('[Webhook] Iniciando Matchmaking...');
-                const matches = await findMatchingProviders(result.extractedData, ticketId);
-                
-                // Normalización definitiva para Argentina: Meta API Cloud rechaza el '9' en envíos
-                const metaRecipient = from.startsWith('549') ? '54' + from.slice(3) : from;
-
-                if (matches && matches.length > 0) {
-                    console.log(`[Matchmaking] ¡Éxito! Se encontraron ${matches.length} profesionales:`, 
-                        matches.map(m => `${m.name} (${m.is_pro ? 'PRO' : 'Normal'})`).join(', ')
-                    );
-                    
-                    // Enviar el Magic Link al usuario
-                    await sendMatchResultsMessage(metaRecipient, matches.length, ticketId);
-                    console.log('[Webhook] Magic Link enviado a WhatsApp.');
-                    return; // Importante: No enviar la respuesta genérica de Gemini si ya enviamos el link
-                } else {
-                    console.log('[Matchmaking] No se encontraron profesionales que coincidan exactamente.');
-                    const noMatchesMsg = "Perdón, por el momento no tenemos profesionales verificados disponibles para ese rubro en tu zona.";
-                    await sendWhatsAppText(metaRecipient, noMatchesMsg);
-                    return; // No enviar respuesta genérica
-                }
-                // --- FIN Matchmaking ---
-
-            } catch (dbErr) {
-                console.error('[Webhook] Error en persistencia o matchmaking:', dbErr.message);
-            }
-        }
-
-        // Fase 2: Responder al usuario por WhatsApp
-        if (result && !result.error && result.replyToClient) {
-            const mensajeAEnviar = result.replyToClient;
-            
-            try {
-                // Normalización definitiva para Argentina: Meta API Cloud rechaza el '9' en envíos
-                const metaRecipient = from.startsWith('549') ? '54' + from.slice(3) : from;
-                
-                await sendWhatsAppText(metaRecipient, mensajeAEnviar);
-                console.log('[Webhook] Respuesta enviada a WhatsApp a:', metaRecipient);
-            } catch (sendErr) {
-                console.error('[Webhook] Error enviando respuesta a WhatsApp:', sendErr.message);
-            }
-        }
+        enqueueDebouncedMessage(from, text);
     } catch (err) {
         console.error('[Webhook] Error procesando POST:', err.message);
     }

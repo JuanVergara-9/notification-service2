@@ -5,6 +5,7 @@ if (fs.existsSync('.env.local')) {
     require('dotenv').config({ path: '.env.local' });
 }
 require('dotenv').config();
+// Feature flag (default seguro): RATE_LIMIT_ENABLED=false
 
 const express = require('express');
 const cors = require('cors');

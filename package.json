@@ -6,7 +6,8 @@
   "type": "commonjs",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "nodemon src/index.js"
+    "dev": "nodemon src/index.js",
+    "clear:tickets": "node clear-tickets.js"
   },
   "dependencies": {
     "@google/genai": "^1.42.0",

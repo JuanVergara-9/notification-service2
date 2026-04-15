@@ -92,6 +92,43 @@ const initDB = async () => {
             END $$;
         `;
         await pool.query(checkCols);
+
+        // ── Credit History Tables (Fintech Infrastructure) ──
+        const creditTables = `
+            CREATE TABLE IF NOT EXISTS credit_events (
+                id SERIAL PRIMARY KEY,
+                provider_id INTEGER NOT NULL,
+                event_type VARCHAR(50) NOT NULL,
+                category VARCHAR(20) NOT NULL,
+                score_impact SMALLINT NOT NULL DEFAULT 0,
+                amount NUMERIC(12, 2),
+                metadata JSONB DEFAULT '{}',
+                source VARCHAR(20) NOT NULL DEFAULT 'system',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS credit_scores (
+                id SERIAL PRIMARY KEY,
+                provider_id INTEGER NOT NULL,
+                score INTEGER NOT NULL DEFAULT 0,
+                level VARCHAR(20) NOT NULL DEFAULT 'NUEVO',
+                transactional_score INTEGER NOT NULL DEFAULT 0,
+                behavioral_score INTEGER NOT NULL DEFAULT 0,
+                reputation_score INTEGER NOT NULL DEFAULT 0,
+                financial_score INTEGER NOT NULL DEFAULT 0,
+                total_events INTEGER NOT NULL DEFAULT 0,
+                calculated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                metadata JSONB DEFAULT '{}'
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_credit_events_provider ON credit_events (provider_id);
+            CREATE INDEX IF NOT EXISTS idx_credit_events_type ON credit_events (event_type);
+            CREATE INDEX IF NOT EXISTS idx_credit_events_created ON credit_events (created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_credit_scores_provider ON credit_scores (provider_id);
+            CREATE INDEX IF NOT EXISTS idx_credit_scores_calculated ON credit_scores (calculated_at DESC);
+        `;
+        await pool.query(creditTables);
+        console.log('[DB] Tablas "credit_events" y "credit_scores" verificadas/creadas con éxito.');
     } catch (err) {
         console.error('[DB] Error al inicializar la tabla:', err.message);
     }
@@ -688,6 +725,161 @@ async function getIndividualWorkerScoring(providerId) {
     }
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// Credit History – DB operations (Fintech Infrastructure)
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function insertCreditEvent(providerId, eventType, category, scoreImpact, { amount, metadata, source } = {}) {
+    const query = `
+        INSERT INTO credit_events (provider_id, event_type, category, score_impact, amount, metadata, source)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING *;
+    `;
+    try {
+        const res = await pool.query(query, [
+            providerId,
+            eventType,
+            category,
+            scoreImpact,
+            amount ?? null,
+            JSON.stringify(metadata || {}),
+            source || 'system'
+        ]);
+        return res.rows[0];
+    } catch (err) {
+        console.error('[CreditDB] Error al insertar credit_event:', err.message);
+        throw err;
+    }
+}
+
+async function getCreditEventsByProvider(providerId, { limit = 50, offset = 0 } = {}) {
+    const query = `
+        SELECT * FROM credit_events
+        WHERE provider_id = $1
+        ORDER BY created_at DESC
+        LIMIT $2 OFFSET $3;
+    `;
+    try {
+        const res = await pool.query(query, [providerId, limit, offset]);
+        return res.rows;
+    } catch (err) {
+        console.error('[CreditDB] Error al obtener credit_events:', err.message);
+        throw err;
+    }
+}
+
+async function getCreditEventsCount(providerId) {
+    const query = 'SELECT COUNT(*)::int AS total FROM credit_events WHERE provider_id = $1;';
+    try {
+        const res = await pool.query(query, [providerId]);
+        return res.rows[0]?.total ?? 0;
+    } catch (err) {
+        console.error('[CreditDB] Error al contar credit_events:', err.message);
+        throw err;
+    }
+}
+
+async function getCreditEventsSummaryByProvider(providerId) {
+    const query = `
+        SELECT
+            category,
+            SUM(score_impact)::int AS total_impact,
+            COUNT(*)::int AS event_count
+        FROM credit_events
+        WHERE provider_id = $1
+        GROUP BY category;
+    `;
+    try {
+        const res = await pool.query(query, [providerId]);
+        return res.rows;
+    } catch (err) {
+        console.error('[CreditDB] Error al obtener resumen de credit_events:', err.message);
+        throw err;
+    }
+}
+
+async function insertCreditScore(providerId, scoreData) {
+    const { score, level, transactional_score, behavioral_score, reputation_score, financial_score, total_events, metadata } = scoreData;
+    const query = `
+        INSERT INTO credit_scores (provider_id, score, level, transactional_score, behavioral_score, reputation_score, financial_score, total_events, metadata)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        RETURNING *;
+    `;
+    try {
+        const res = await pool.query(query, [
+            providerId, score, level,
+            transactional_score, behavioral_score, reputation_score, financial_score,
+            total_events, JSON.stringify(metadata || {})
+        ]);
+        return res.rows[0];
+    } catch (err) {
+        console.error('[CreditDB] Error al insertar credit_score:', err.message);
+        throw err;
+    }
+}
+
+async function getLatestCreditScore(providerId) {
+    const query = `
+        SELECT * FROM credit_scores
+        WHERE provider_id = $1
+        ORDER BY calculated_at DESC
+        LIMIT 1;
+    `;
+    try {
+        const res = await pool.query(query, [providerId]);
+        return res.rows[0] || null;
+    } catch (err) {
+        console.error('[CreditDB] Error al obtener último credit_score:', err.message);
+        throw err;
+    }
+}
+
+async function getCreditScoreHistory(providerId, { limit = 30 } = {}) {
+    const query = `
+        SELECT * FROM credit_scores
+        WHERE provider_id = $1
+        ORDER BY calculated_at DESC
+        LIMIT $2;
+    `;
+    try {
+        const res = await pool.query(query, [providerId, limit]);
+        return res.rows;
+    } catch (err) {
+        console.error('[CreditDB] Error al obtener historial de credit_scores:', err.message);
+        throw err;
+    }
+}
+
+async function getProvidersWithRecentEvents(sinceDate) {
+    const query = `
+        SELECT DISTINCT provider_id
+        FROM credit_events
+        WHERE created_at >= $1;
+    `;
+    try {
+        const res = await pool.query(query, [sinceDate]);
+        return res.rows.map(r => r.provider_id);
+    } catch (err) {
+        console.error('[CreditDB] Error al obtener providers con eventos recientes:', err.message);
+        throw err;
+    }
+}
+
+async function checkDuplicateCreditEvent(providerId, eventType, refId, refField = 'ticket_id') {
+    const query = `
+        SELECT id FROM credit_events
+        WHERE provider_id = $1 AND event_type = $2 AND metadata->>$3 = $4
+        LIMIT 1;
+    `;
+    try {
+        const res = await pool.query(query, [providerId, eventType, refField, String(refId)]);
+        return res.rows.length > 0;
+    } catch (err) {
+        console.error('[CreditDB] Error al verificar duplicado:', err.message);
+        return false;
+    }
+}
+
 module.exports = {
     getBehavioralMetrics,
     getActiveWorkersList,
@@ -712,5 +904,15 @@ module.exports = {
     createUser,
     acceptTerms,
     CURRENT_TERMS_VERSION,
-    pool
+    pool,
+    // Credit History
+    insertCreditEvent,
+    getCreditEventsByProvider,
+    getCreditEventsCount,
+    getCreditEventsSummaryByProvider,
+    insertCreditScore,
+    getLatestCreditScore,
+    getCreditScoreHistory,
+    getProvidersWithRecentEvents,
+    checkDuplicateCreditEvent
 };

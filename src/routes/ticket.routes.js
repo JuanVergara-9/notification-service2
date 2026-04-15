@@ -4,6 +4,7 @@ const router = require('express').Router();
 const { saveTicket, getTickets, getTicketById, updateTicketStatus, assignTicket, completeTicket } = require('../services/db.service');
 const { sendWhatsAppText } = require('../services/whatsapp.service');
 const { getProviderWhatsAppNumber } = require('../services/provider-client.service');
+const { emitCreditEvent } = require('../services/credit.service');
 
 /**
  * GET /api/v1/tickets/:id
@@ -191,6 +192,12 @@ router.post('/tickets/:id/complete', async (req, res) => {
         }
 
         await sendWhatsAppText(providerPhone, COMPLETE_MESSAGE_TO_PROVIDER);
+
+        // Credit History: JOB_COMPLETED
+        emitCreditEvent(ticket.provider_id, 'JOB_COMPLETED', {
+            metadata: { ticket_id: ticket.id, category: ticket.category },
+            source: 'whatsapp'
+        }).catch(err => console.error('[Credit] Error emitting JOB_COMPLETED:', err.message));
 
         res.json({
             success: true,

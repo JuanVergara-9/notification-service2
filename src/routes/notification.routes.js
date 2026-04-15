@@ -8,6 +8,7 @@ const { findMatchingProviders } = require('../services/matchmaking.service');
 const { checkAndProcessProviderAmount } = require('../services/ledger.service');
 const { checkAndProcessClientReview } = require('../services/review.service');
 const { getProviderWhatsAppNumber } = require('../services/provider-client.service');
+const { emitCreditEvent } = require('../services/credit.service');
 const { whatsappLimiter } = require('../middlewares/whatsappLimiter.middleware');
 
 const WEBHOOK_VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN || '';
@@ -189,6 +190,14 @@ router.post('/webhook', whatsappLimiter, async (req, res) => {
                 const ticketId = buttonId.replace(/^GHOST_NO_/, '');
                 const ticket = ticketId ? await getTicketById(ticketId) : null;
                 if (ticket) {
+                    // Credit History: JOB_GHOSTED (before clearing provider_id)
+                    if (ticket.provider_id) {
+                        emitCreditEvent(ticket.provider_id, 'JOB_GHOSTED', {
+                            metadata: { ticket_id: ticket.id, category: ticket.category },
+                            source: 'whatsapp'
+                        }).catch(err => console.error('[Credit] Error emitting JOB_GHOSTED:', err.message));
+                    }
+
                     await reopenTicketAfterGhost(ticketId);
                     const FRONTEND_URL = process.env.FRONTEND_URL || 'https://miservicio.ar';
                     await sendWhatsAppText(metaRecipient, `Te pido mil disculpas. Evidentemente el profesional tuvo un contratiempo. Te vuelvo a mandar el enlace para que elijas a otra persona disponible: ${FRONTEND_URL}/pedidos/match/${ticketId}`);

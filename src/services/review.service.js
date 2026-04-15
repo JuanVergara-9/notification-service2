@@ -4,6 +4,7 @@ const axios = require('axios');
 const { getPendingReviewTicketByClientPhone, updateTicketClientRating } = require('./db.service');
 const { sendWhatsAppText } = require('./whatsapp.service');
 const { generateInternalToken } = require('../utils/jwt');
+const { emitCreditEvent } = require('./credit.service');
 
 const MSG_INVALID_RATING = 'Por favor, respondeme solo con un número del 1 al 5 para calificar el servicio.';
 const MSG_THANKS_RATING = '¡Gracias por tu calificación! ⭐ Tus reseñas ayudan a construir una comunidad más confiable.';
@@ -69,6 +70,15 @@ async function checkAndProcessClientReview(from, text) {
     }
 
     await sendWhatsAppText(from, MSG_THANKS_RATING);
+
+    // Credit History: emit review event based on rating
+    if (ticket.provider_id) {
+        const eventType = rating >= 4 ? 'REVIEW_POSITIVE' : rating <= 2 ? 'REVIEW_NEGATIVE' : 'REVIEW_NEUTRAL';
+        emitCreditEvent(ticket.provider_id, eventType, {
+            metadata: { ticket_id: ticket.id, rating, source: 'whatsapp' },
+            source: 'whatsapp'
+        }).catch(err => console.error('[Credit] Error emitting review event:', err.message));
+    }
 
     console.log('[Review] Calificación registrada.', { ticketId: ticket.id, clientRating: rating, clientSuffix: phoneSuffix });
     return true;

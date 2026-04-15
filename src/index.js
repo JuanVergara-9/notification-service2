@@ -32,7 +32,7 @@ const corsOptions = {
       }
     : true, // temporalmente permisivo para probar
   methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key', 'x-internal-key'],
   credentials: true,
   optionsSuccessStatus: 204
 };
@@ -50,10 +50,17 @@ app.use('/api/v1/notifications', require('./routes/notification.routes'));
 app.use('/api/v1', require('./routes/ticket.routes'));
 app.use('/api/v1/metrics', require('./routes/metrics.routes'));
 
+// Internal endpoint for credit event ingestion from other microservices
+const { ingestCreditEvent } = require('./controllers/metrics.controller');
+app.post('/api/v1/internal/credit-events', ingestCreditEvent);
+
 app.use((_req, res) => res.status(404).json({ error: 'Not found' }));
 
 const { initGhostingCron } = require('./cron/ghosting.cron');
 initGhostingCron();
+
+const { initCreditScoreCron } = require('./cron/credit-score.cron');
+initCreditScoreCron();
 
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`notification-service on :${PORT}`);

@@ -1,7 +1,7 @@
 'use strict';
 
 const router = require('express').Router();
-const { getShadowLedgerHealth, getBehavioralSignals, getWorkerFinancialProfile, getActiveWorkers } = require('../controllers/metrics.controller');
+const { getShadowLedgerHealth, getBehavioralSignals, getWorkerFinancialProfile, getActiveWorkers, getCreditHistory, getCreditScore, ingestCreditEvent, recalculateCreditScore } = require('../controllers/metrics.controller');
 
 /**
  * GET /api/v1/metrics/shadow-ledger-health
@@ -28,5 +28,13 @@ router.get('/worker-scoring/:id', getWorkerFinancialProfile);
  * Lista de trabajadores activos (30d) con GMV y transacciones, para el dashboard general.
  */
 router.get('/active-workers', getActiveWorkers);
+
+// ── Credit History (Fintech Infrastructure) ──
+
+router.get('/credit-history/:id', getCreditHistory);
+
+router.get('/credit-score/:id', getCreditScore);
+
+router.post('/credit-score/:id/recalculate', recalculateCreditScore);
 
 module.exports = router;

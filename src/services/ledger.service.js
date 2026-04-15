@@ -2,6 +2,7 @@
 
 const { getPendingAmountTicketByProviderPhone, updateTicketFinalAmount } = require('./db.service');
 const { sendWhatsAppText } = require('./whatsapp.service');
+const { emitCreditEvent } = require('./credit.service');
 
 const MSG_ASK_AMOUNT = 'Por favor, respondeme solo con el número del monto que cobraste (ej: 15000).';
 const MSG_CONFIRM_TEMPLATE = (amount) => `¡Excelente! 💸 Ya registramos tu ingreso de $${amount}. Esto te ayuda a construir tu historial financiero en miservicio. ¡A seguir creciendo!`;
@@ -62,6 +63,16 @@ async function checkAndProcessProviderAmount(phoneNumber, messageText) {
     }
 
     console.log('[Ledger] GMV registrado.', { ticketId: ticket.id, amount: formattedAmount, providerSuffix: phoneSuffix });
+
+    // Credit History: PAYMENT_REPORTED
+    if (ticket.provider_id) {
+        emitCreditEvent(ticket.provider_id, 'PAYMENT_REPORTED', {
+            amount,
+            metadata: { ticket_id: ticket.id },
+            source: 'whatsapp'
+        }).catch(err => console.error('[Credit] Error emitting PAYMENT_REPORTED:', err.message));
+    }
+
     return true;
 }
 

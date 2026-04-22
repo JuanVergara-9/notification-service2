@@ -1,6 +1,6 @@
 'use strict';
 
-const { getShadowLedgerHealthMetrics, getBehavioralMetrics, getIndividualWorkerScoring, getActiveWorkersList, getCreditEventsByProvider, getCreditEventsCount, getCreditScoreHistory } = require('../services/db.service');
+const { getShadowLedgerHealthMetrics, getBehavioralMetrics, getIndividualWorkerScoring, getActiveWorkersList, getCreditEventsByProvider, getCreditEventsCount, getCreditScoreHistory, getWorkerMonthlyEarnings, getWorkerAllTimeStats, getWorkerBestMonth, getWorkerAchievementCounts } = require('../services/db.service');
 const { getCreditProfile, emitCreditEvent, calculateAndSaveScore, SCORE_WEIGHTS } = require('../services/credit.service');
 
 /**
@@ -192,6 +192,85 @@ async function recalculateCreditScore(req, res) {
     }
 }
 
+/**
+ * GET /api/v1/metrics/worker-dashboard/:id
+ * Dashboard PRO: all data a worker needs in one call.
+ * Returns earnings, scoring, credit profile, achievements.
+ */
+async function getWorkerDashboard(req, res) {
+    const providerId = Number(req.params.id);
+    if (!providerId || isNaN(providerId)) {
+        return res.status(400).json({ error: 'providerId inválido' });
+    }
+    try {
+        const [monthlyEarnings, allTimeStats, bestMonth, scoring, creditProfile, achievementCounts] = await Promise.all([
+            getWorkerMonthlyEarnings(providerId, 6),
+            getWorkerAllTimeStats(providerId),
+            getWorkerBestMonth(providerId),
+            getIndividualWorkerScoring(providerId),
+            getCreditProfile(providerId),
+            getWorkerAchievementCounts(providerId),
+        ]);
+
+        const responseRate = scoring.ghostingRate != null
+            ? Number((100 - scoring.ghostingRate).toFixed(1))
+            : 100;
+
+        const achievements = [
+            { id: 'first_job', label: 'Primer Trabajo', unlocked: allTimeStats.totalCompleted >= 1, icon: 'briefcase' },
+            { id: 'ten_jobs', label: '10 Trabajos', unlocked: allTimeStats.totalCompleted >= 10, icon: 'trophy' },
+            { id: 'fifty_jobs', label: '50 Trabajos', unlocked: allTimeStats.totalCompleted >= 50, icon: 'star' },
+            { id: 'fast_responder', label: 'Respuesta Rápida', unlocked: scoring.avgResponseTimeMinutes != null && scoring.avgResponseTimeMinutes < 30, icon: 'zap' },
+            { id: 'high_rating', label: '5 Estrellas', unlocked: (achievementCounts.REVIEW_POSITIVE || 0) >= 5, icon: 'star' },
+            { id: 'reliable', label: 'Confiable', unlocked: responseRate >= 95, icon: 'shield' },
+        ];
+
+        const nextLevel = creditProfile.score < 201 ? { name: 'EN_DESARROLLO', threshold: 201 }
+            : creditProfile.score < 401 ? { name: 'CONFIABLE', threshold: 401 }
+            : creditProfile.score < 601 ? { name: 'EXCELENTE', threshold: 601 }
+            : creditProfile.score < 801 ? { name: 'ELITE', threshold: 801 }
+            : null;
+
+        const pointsToNextLevel = nextLevel ? nextLevel.threshold - creditProfile.score : 0;
+
+        res.json({
+            earnings: {
+                monthly: monthlyEarnings,
+                thisMonth: allTimeStats.earningsThisMonth,
+                lastMonth: allTimeStats.earningsLastMonth,
+                totalEarned: allTimeStats.totalEarned,
+                avgTicket: allTimeStats.avgTicket,
+                bestMonth,
+                jobsThisMonth: allTimeStats.jobsThisMonth,
+                jobsLastMonth: allTimeStats.jobsLastMonth,
+            },
+            level: {
+                score: creditProfile.score,
+                level: creditProfile.level,
+                nextLevel: nextLevel?.name ?? null,
+                pointsToNextLevel,
+                transactional: creditProfile.transactional_score,
+                behavioral: creditProfile.behavioral_score,
+                reputation: creditProfile.reputation_score,
+                financial: creditProfile.financial_score,
+                totalEvents: creditProfile.total_events,
+            },
+            performance: {
+                totalCompleted: allTimeStats.totalCompleted,
+                completionRate: allTimeStats.completionRate,
+                responseRate,
+                avgResponseTimeMinutes: scoring.avgResponseTimeMinutes,
+                avgRating: scoring.ticketPromedio != null ? undefined : undefined,
+                daysSinceLastJob: scoring.daysSinceLastJob,
+            },
+            achievements,
+        });
+    } catch (err) {
+        console.error('[Metrics] getWorkerDashboard:', err.message);
+        res.status(500).json({ error: 'Error al obtener dashboard del trabajador' });
+    }
+}
+
 module.exports = {
     getShadowLedgerHealth,
     getBehavioralSignals,
@@ -200,5 +279,6 @@ module.exports = {
     getCreditHistory,
     getCreditScore,
     ingestCreditEvent,
-    recalculateCreditScore
+    recalculateCreditScore,
+    getWorkerDashboard
 };

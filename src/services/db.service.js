@@ -880,6 +880,117 @@ async function checkDuplicateCreditEvent(providerId, eventType, refId, refField 
     }
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// Worker PRO Dashboard – Aggregated metrics for the worker-facing dashboard
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function getWorkerMonthlyEarnings(providerId, months = 6) {
+    const query = `
+        SELECT
+            TO_CHAR(DATE_TRUNC('month', completed_at), 'YYYY-MM') AS month,
+            COALESCE(SUM(final_amount), 0)::numeric AS earnings,
+            COUNT(*)::int AS jobs
+        FROM tickets
+        WHERE provider_id = $1
+          AND status = 'COMPLETADO'
+          AND completed_at IS NOT NULL
+          AND completed_at >= DATE_TRUNC('month', NOW()) - ($2 || ' months')::interval
+        GROUP BY DATE_TRUNC('month', completed_at)
+        ORDER BY month ASC;
+    `;
+    try {
+        const res = await pool.query(query, [providerId, months]);
+        return res.rows.map(r => ({
+            month: r.month,
+            earnings: Number(r.earnings),
+            jobs: r.jobs
+        }));
+    } catch (err) {
+        console.error('[DB] Error en getWorkerMonthlyEarnings:', err.message);
+        throw err;
+    }
+}
+
+async function getWorkerAllTimeStats(providerId) {
+    const query = `
+        SELECT
+            COUNT(*) FILTER (WHERE status = 'COMPLETADO')::int AS total_completed,
+            COALESCE(SUM(final_amount) FILTER (WHERE status = 'COMPLETADO'), 0)::numeric AS total_earned,
+            COALESCE(AVG(final_amount) FILTER (WHERE status = 'COMPLETADO' AND final_amount IS NOT NULL), 0)::numeric AS avg_ticket,
+            COUNT(*) FILTER (WHERE assigned_at IS NOT NULL)::int AS total_assigned,
+            COUNT(*) FILTER (WHERE status = 'COMPLETADO' AND completed_at >= DATE_TRUNC('month', NOW()))::int AS jobs_this_month,
+            COALESCE(SUM(final_amount) FILTER (WHERE status = 'COMPLETADO' AND completed_at >= DATE_TRUNC('month', NOW())), 0)::numeric AS earnings_this_month,
+            COUNT(*) FILTER (WHERE status = 'COMPLETADO' AND completed_at >= DATE_TRUNC('month', NOW()) - INTERVAL '1 month' AND completed_at < DATE_TRUNC('month', NOW()))::int AS jobs_last_month,
+            COALESCE(SUM(final_amount) FILTER (WHERE status = 'COMPLETADO' AND completed_at >= DATE_TRUNC('month', NOW()) - INTERVAL '1 month' AND completed_at < DATE_TRUNC('month', NOW())), 0)::numeric AS earnings_last_month
+        FROM tickets
+        WHERE provider_id = $1;
+    `;
+    try {
+        const res = await pool.query(query, [providerId]);
+        const r = res.rows[0] || {};
+        return {
+            totalCompleted: r.total_completed ?? 0,
+            totalEarned: Number(r.total_earned ?? 0),
+            avgTicket: Number(Number(r.avg_ticket ?? 0).toFixed(2)),
+            totalAssigned: r.total_assigned ?? 0,
+            jobsThisMonth: r.jobs_this_month ?? 0,
+            earningsThisMonth: Number(r.earnings_this_month ?? 0),
+            jobsLastMonth: r.jobs_last_month ?? 0,
+            earningsLastMonth: Number(r.earnings_last_month ?? 0),
+            completionRate: (r.total_assigned ?? 0) > 0
+                ? Number(((r.total_completed / r.total_assigned) * 100).toFixed(1))
+                : 0
+        };
+    } catch (err) {
+        console.error('[DB] Error en getWorkerAllTimeStats:', err.message);
+        throw err;
+    }
+}
+
+async function getWorkerBestMonth(providerId) {
+    const query = `
+        SELECT
+            TO_CHAR(DATE_TRUNC('month', completed_at), 'YYYY-MM') AS month,
+            SUM(final_amount)::numeric AS earnings
+        FROM tickets
+        WHERE provider_id = $1
+          AND status = 'COMPLETADO'
+          AND final_amount IS NOT NULL
+          AND completed_at IS NOT NULL
+        GROUP BY DATE_TRUNC('month', completed_at)
+        ORDER BY earnings DESC
+        LIMIT 1;
+    `;
+    try {
+        const res = await pool.query(query, [providerId]);
+        if (res.rows.length === 0) return null;
+        return { month: res.rows[0].month, earnings: Number(res.rows[0].earnings) };
+    } catch (err) {
+        console.error('[DB] Error en getWorkerBestMonth:', err.message);
+        return null;
+    }
+}
+
+async function getWorkerAchievementCounts(providerId) {
+    const query = `
+        SELECT
+            event_type,
+            COUNT(*)::int AS count
+        FROM credit_events
+        WHERE provider_id = $1
+        GROUP BY event_type;
+    `;
+    try {
+        const res = await pool.query(query, [providerId]);
+        const map = {};
+        for (const r of res.rows) map[r.event_type] = r.count;
+        return map;
+    } catch (err) {
+        console.error('[DB] Error en getWorkerAchievementCounts:', err.message);
+        return {};
+    }
+}
+
 module.exports = {
     getBehavioralMetrics,
     getActiveWorkersList,
@@ -914,5 +1025,10 @@ module.exports = {
     getLatestCreditScore,
     getCreditScoreHistory,
     getProvidersWithRecentEvents,
-    checkDuplicateCreditEvent
+    checkDuplicateCreditEvent,
+    // Worker PRO Dashboard
+    getWorkerMonthlyEarnings,
+    getWorkerAllTimeStats,
+    getWorkerBestMonth,
+    getWorkerAchievementCounts
 };

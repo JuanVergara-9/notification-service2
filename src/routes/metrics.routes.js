@@ -1,7 +1,7 @@
 'use strict';
 
 const router = require('express').Router();
-const { getShadowLedgerHealth, getBehavioralSignals, getWorkerFinancialProfile, getActiveWorkers, getCreditHistory, getCreditScore, ingestCreditEvent, recalculateCreditScore } = require('../controllers/metrics.controller');
+const { getShadowLedgerHealth, getBehavioralSignals, getWorkerFinancialProfile, getActiveWorkers, getCreditHistory, getCreditScore, ingestCreditEvent, recalculateCreditScore, getWorkerDashboard } = require('../controllers/metrics.controller');
 
 /**
  * GET /api/v1/metrics/shadow-ledger-health
@@ -36,5 +36,9 @@ router.get('/credit-history/:id', getCreditHistory);
 router.get('/credit-score/:id', getCreditScore);
 
 router.post('/credit-score/:id/recalculate', recalculateCreditScore);
+
+// ── Worker PRO Dashboard ──
+
+router.get('/worker-dashboard/:id', getWorkerDashboard);
 
 module.exports = router;

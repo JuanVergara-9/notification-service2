@@ -4,6 +4,7 @@ const { GoogleGenAI } = require('@google/genai');
 
 const apiKey = process.env.GEMINI_API_KEY;
 const client = apiKey ? new GoogleGenAI({ apiKey }) : null;
+const SAFETY_FALLBACK_REPLY = "Disculpá, no puedo procesar ese tipo de mensajes. Estoy acá para ayudarte a encontrar el profesional que necesitás en San Rafael. ¿Buscás algún rubro en particular?";
 
 // Almacenamiento temporal de sesiones en memoria
 const sessions = new Map();
@@ -27,7 +28,33 @@ Regla estricta para el campo zone: extrae ÚNICAMENTE el nombre de la ciudad pri
 Reglas de diálogo:
 1. Si el usuario no te da la zona o no queda clara la urgencia, isComplete debe ser false. En replyToClient debes redactar un mensaje natural, cortito y empático preguntando SOLO por el dato que falta (ej: "¡Hola! Te busco un técnico para la heladera. ¿En qué zona de la ciudad estás y qué tan urgente es?").
 2. Si ya tienes zona, descripción, categoría y urgencia, isComplete debe ser true, y en replyToClient redactas la confirmación final (ej: "¡Perfecto! Ya registré tu pedido para arreglar la heladera en el centro con urgencia media. Le estoy avisando a los técnicos.").
-Responde únicamente con el JSON, sin texto adicional.`;
+Responde únicamente con el JSON, sin texto adicional.
+
+IMPORTANTE: Eres estrictamente un asistente para "miservicio", una plataforma de oficios. Si el usuario hace preguntas fuera de contexto (política, chistes, consultas generales), usa lenguaje ofensivo, o pide cosas inapropiadas/ilegales, DEBES negarte a responder amablemente. Usa frases como: "Soy el asistente virtual de miservicio, solo puedo ayudarte a buscar profesionales o gestionar tus pedidos de oficios. ¿En qué rubro te puedo ayudar hoy?"`;
+
+function buildSafetyFallback() {
+    return {
+        isComplete: false,
+        extractedData: {
+            category: null,
+            description: null,
+            zone: null,
+            urgency: null
+        },
+        replyToClient: SAFETY_FALLBACK_REPLY
+    };
+}
+
+function isSafetyBlockedError(err) {
+    const raw = `${err?.message || ''} ${JSON.stringify(err || {})}`.toLowerCase();
+    return (
+        raw.includes('safety') ||
+        raw.includes('blocked') ||
+        raw.includes('harm') ||
+        raw.includes('prompt_feedback') ||
+        raw.includes('finishreason')
+    );
+}
 
 /**
  * Analiza un mensaje de texto con Gemini manteniendo el contexto de la conversación.
@@ -56,10 +83,16 @@ async function analyzeMessage(from, text) {
     try {
         const response = await client.models.generateContent({
             model: 'gemini-2.5-flash',
-            contents: [
-                { role: 'user', parts: [{ text: SYSTEM_INSTRUCTION }] },
-                ...history
-            ]
+            contents: history,
+            config: {
+                systemInstruction: SYSTEM_INSTRUCTION,
+                safetySettings: [
+                    { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+                    { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+                    { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+                    { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' }
+                ]
+            }
         });
 
         const output = response.text.trim();
@@ -86,6 +119,10 @@ async function analyzeMessage(from, text) {
         return parsed;
     } catch (err) {
         console.error('[Gemini] Error en analyzeMessage:', err.message);
+        if (isSafetyBlockedError(err)) {
+            console.warn('[Gemini] Contenido bloqueado por safety. Respondiendo fallback controlado.');
+            return buildSafetyFallback();
+        }
         return { error: err.message || 'parse_error' };
     }
 }

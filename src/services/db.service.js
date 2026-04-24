@@ -13,7 +13,7 @@ const pool = new Pool({
     }
 });
 
-const CURRENT_TERMS_VERSION = 'v1.1';
+const CURRENT_TERMS_VERSION = 'v1.2';
 
 /**
  * Script de inicialización: Crea las tablas si no existen.

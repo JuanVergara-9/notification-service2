@@ -1,6 +1,7 @@
 'use strict';
 
 const db = require('./db.service');
+const { isReputationConsentGranted } = require('./reputation-consent.service');
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Score Weights – Configurable impact per event type.
@@ -61,6 +62,20 @@ async function emitCreditEvent(providerId, eventType, { amount, metadata, source
     const weight = SCORE_WEIGHTS[eventType];
     if (!weight) {
         console.warn(`[Credit] Unknown event type: ${eventType}`);
+        return null;
+    }
+
+    const consentOk = await isReputationConsentGranted(providerId);
+    if (!consentOk) {
+        console.warn(
+            JSON.stringify({
+                type: 'CONSENT_BLOCK',
+                providerId,
+                eventType,
+                source: source || 'unknown',
+                message: 'Skipped credit_events insert: reputation_consent is not true (or not confirmed)'
+            })
+        );
         return null;
     }
 

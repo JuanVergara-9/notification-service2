@@ -2,6 +2,7 @@
 
 const axios = require('axios');
 const { updateTicketCategorySlug } = require('./db.service');
+const { extractCityForProviderSearch, enrichTicketZone } = require('../config/serviceArea');
 
 /**
  * Servicio de Matchmaking para conectar tickets con profesionales.
@@ -54,22 +55,6 @@ function normalizeCategoryForApi(category) {
   return { categoryName: category.trim(), categorySlug: undefined };
 }
 
-/**
- * Normaliza la zona para búsqueda: "San Rafael Mendoza" → ciudad "San Rafael", provincia "Mendoza".
- */
-function parseZone(zone) {
-  if (!zone || typeof zone !== 'string') return { city: '', province: '' };
-  const t = zone.trim();
-  const parts = t.split(',').map(s => s.trim()).filter(Boolean);
-  const city = parts[0] || t;
-  const province = parts[1] || '';
-  return { city, province };
-}
-
-function normalizeZoneForSearch(zone) {
-  return parseZone(zone).city || zone || '';
-}
-
 const DEFAULT_RADIUS_KM = 40;
 
 /**
@@ -82,12 +67,13 @@ async function geocodeZone(zone) {
   const base = (geoUrl || gatewayUrl || '').replace(/\/$/, '');
   if (!base) return null;
 
-  const { city, province } = parseZone(zone);
+  const city = extractCityForProviderSearch(zone);
   if (!city) return null;
 
   const url = `${base}/api/v1/geo/geocode`;
   const params = new URLSearchParams({ city });
-  if (province) params.set('province', province);
+  const zLower = (zone || '').toLowerCase();
+  if (zLower.includes('mendoza')) params.set('province', 'Mendoza');
 
   try {
     const res = await axios.get(`${url}?${params.toString()}`, { timeout: 4000 });
@@ -97,7 +83,7 @@ async function geocodeZone(zone) {
     return null;
   } catch (err) {
     if (err.response && err.response.status === 404) {
-      console.log('[Matchmaking] Geolocation: zona no encontrada en catálogo:', city, province || '');
+      console.log('[Matchmaking] Geolocation: zona no encontrada en catálogo:', city);
     } else {
       console.warn('[Matchmaking] Geolocation no disponible:', err.message);
     }
@@ -125,7 +111,7 @@ async function findMatchingProviders(ticketData, ticketId) {
         console.log(`[Matchmaking] URL FINAL: ${fullUrl} (via ${via})`);
 
         const { categoryName: apiCategoryName, categorySlug: apiCategorySlug } = normalizeCategoryForApi(category);
-        const cityForSearch = normalizeZoneForSearch(zone);
+        const cityForSearch = extractCityForProviderSearch(zone);
         if (apiCategorySlug) {
             console.log(`[Matchmaking] Categoría normalizada: "${category}" → slug "${apiCategorySlug}"`);
             if (ticketId != null) {
@@ -137,7 +123,9 @@ async function findMatchingProviders(ticketData, ticketId) {
                 }
             }
         }
-        if (cityForSearch !== (zone || '').trim()) console.log(`[Matchmaking] Zona normalizada: "${zone}" → ciudad búsqueda "${cityForSearch}"`);
+        if (cityForSearch !== (zone || '').trim()) {
+            console.log(`[Matchmaking] Zona "${zone}" → ciudad búsqueda "${cityForSearch}"`);
+        }
 
         const params = {
             city: cityForSearch,
@@ -150,7 +138,7 @@ async function findMatchingProviders(ticketData, ticketId) {
         if (apiCategorySlug) params.categorySlug = apiCategorySlug;
         else if (apiCategoryName) params.categoryName = apiCategoryName;
 
-        const coords = await geocodeZone(zone);
+        const coords = await geocodeZone(enrichTicketZone(zone));
         if (coords) {
             params.lat = coords.lat;
             params.lng = coords.lng;

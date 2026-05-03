@@ -148,7 +148,11 @@ async function getCreditScore(req, res) {
  */
 async function ingestCreditEvent(req, res) {
     const internalKey = req.headers['x-internal-key'];
-    const expectedKey = process.env.CREDIT_EVENTS_INTERNAL_KEY || process.env.JWT_SECRET || '';
+    const expectedKey =
+        (process.env.NOTIFICATION_INTERNAL_API_KEY ||
+            process.env.CREDIT_EVENTS_INTERNAL_KEY ||
+            process.env.JWT_SECRET ||
+            '').trim();
     if (!internalKey || internalKey !== expectedKey) {
         return res.status(401).json({ error: 'Unauthorized' });
     }

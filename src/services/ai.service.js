@@ -1,6 +1,7 @@
 'use strict';
 
 const { GoogleGenAI } = require('@google/genai');
+const { getDefaultServiceCity, enrichExtractedDataWithServiceArea } = require('../config/serviceArea');
 
 const apiKey = process.env.GEMINI_API_KEY;
 const client = apiKey ? new GoogleGenAI({ apiKey }) : null;
@@ -9,7 +10,9 @@ const SAFETY_FALLBACK_REPLY = "Disculpá, no puedo procesar ese tipo de mensajes
 // Almacenamiento temporal de sesiones en memoria
 const sessions = new Map();
 
-const SYSTEM_INSTRUCTION = `Eres el recepcionista virtual de "miservicio", un marketplace de oficios. Tu objetivo es entender qué necesita el cliente y asegurarte de tener 4 datos clave: category, description, zone (barrio/ciudad), y urgency (alta, media, o baja).
+function buildSystemInstruction() {
+    const metro = process.env.SERVICE_AREA_CUSTOMER_HINT || getDefaultServiceCity();
+    return `Eres el recepcionista virtual de "miservicio", un marketplace de oficios. Tu objetivo es entender qué necesita el cliente y asegurarte de tener 4 datos clave: category, description, zone (barrio, zona o ciudad), y urgency (alta, media, o baja).
 
 Tu respuesta DEBE ser SIEMPRE un JSON válido con esta estructura exacta:
 {
@@ -23,14 +26,19 @@ Tu respuesta DEBE ser SIEMPRE un JSON válido con esta estructura exacta:
   "replyToClient": "string"
 }
 
-Regla estricta para el campo zone: extrae ÚNICAMENTE el nombre de la ciudad principal, ignorando la provincia o el país. Por ejemplo, si el texto dice "San Rafael Mendoza" o "San Rafael, Mza", debes extraer estrictamente "San Rafael".
+Zona y cobertura (MUY IMPORTANTE):
+- Hoy la operación principal es en ${metro} (y otras ciudades cuando el sistema las habilite). Si el usuario dice solo un barrio o referencia local ("el centro", "cerca del shopping", "zona norte", "Colón"), eso cuenta como zona válida: guardá en "zone" lo que dijo el usuario (no rechaces por no mencionar la ciudad).
+- Si el usuario ya nombró una ciudad de la zona de servicio, podés usarla en "zone" (ej: "Centro, ${metro}").
+- Si menciona una ciudad fuera de la cobertura actual, explicá con empatía que por ahora canalizás pedidos en ${metro} y pedí confirmación si el trabajo es ahí.
+- Cuando falte la zona o la urgencia, isComplete=false y preguntá solo por lo que falta. Para la zona, preguntá por el barrio o zona dentro de ${metro} (ej: "¿En qué barrio o zona de ${metro} necesitás el servicio?").
 
 Reglas de diálogo:
-1. Si el usuario no te da la zona o no queda clara la urgencia, isComplete debe ser false. En replyToClient debes redactar un mensaje natural, cortito y empático preguntando SOLO por el dato que falta (ej: "¡Hola! Te busco un técnico para la heladera. ¿En qué zona de la ciudad estás y qué tan urgente es?").
-2. Si ya tienes zona, descripción, categoría y urgencia, isComplete debe ser true, y en replyToClient redactas la confirmación final (ej: "¡Perfecto! Ya registré tu pedido para arreglar la heladera en el centro con urgencia media. Le estoy avisando a los técnicos.").
+1. Si falta categoría, descripción, zona o urgencia, isComplete debe ser false. En replyToClient preguntá SOLO por lo que falta, en un mensaje corto y empático.
+2. Si ya tenés las cuatro cosas (incluida zona aunque sea solo un barrio), isComplete debe ser true, y en replyToClient confirmá el pedido de forma breve sin volver a pedir datos que el usuario ya dio en la conversación.
 Responde únicamente con el JSON, sin texto adicional.
 
 IMPORTANTE: Eres estrictamente un asistente para "miservicio", una plataforma de oficios. Si el usuario hace preguntas fuera de contexto (política, chistes, consultas generales), usa lenguaje ofensivo, o pide cosas inapropiadas/ilegales, DEBES negarte a responder amablemente. Usa frases como: "Soy el asistente virtual de miservicio, solo puedo ayudarte a buscar profesionales o gestionar tus pedidos de oficios. ¿En qué rubro te puedo ayudar hoy?"`;
+}
 
 function buildSafetyFallback() {
     return {
@@ -85,7 +93,7 @@ async function analyzeMessage(from, text) {
             model: 'gemini-2.5-flash',
             contents: history,
             config: {
-                systemInstruction: SYSTEM_INSTRUCTION,
+                systemInstruction: buildSystemInstruction(),
                 safetySettings: [
                     { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
                     { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
@@ -106,14 +114,19 @@ async function analyzeMessage(from, text) {
         
         const parsed = JSON.parse(jsonStr);
 
-        // Si el ticket está completo, eliminamos la sesión para el próximo pedido
-        if (parsed.isComplete) {
-            console.log(`[Gemini] Ticket completado para ${from}. Limpiando sesión.`);
-            sessions.delete(from);
-        } else {
-            // Si no está completo, guardamos la respuesta del modelo en el historial para mantener el contexto
-            history.push({ role: 'model', parts: [{ text: output }] });
+        if (parsed.extractedData) {
+            parsed.extractedData = enrichExtractedDataWithServiceArea(parsed.extractedData);
+            const ex = parsed.extractedData;
+            const hasAll = [ex.category, ex.description, ex.zone, ex.urgency].every(
+                (x) => x != null && String(x).trim() !== ''
+            );
+            if (hasAll) {
+                parsed.isComplete = true;
+            }
         }
+
+        // Mantener contexto hasta matchmaking exitoso (notification.routes llama clearUserSession).
+        history.push({ role: 'model', parts: [{ text: output }] });
 
         console.log('[Gemini] Análisis con memoria completado.');
         return parsed;
@@ -127,4 +140,11 @@ async function analyzeMessage(from, text) {
     }
 }
 
-module.exports = { analyzeMessage };
+function clearUserSession(from) {
+    if (sessions.has(from)) {
+        sessions.delete(from);
+        console.log(`[Gemini] Sesión limpiada para ${from}.`);
+    }
+}
+
+module.exports = { analyzeMessage, clearUserSession };

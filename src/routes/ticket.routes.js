@@ -1,6 +1,7 @@
 'use strict';
 
 const router = require('express').Router();
+const { requireBearerJwt, requireAdminJwt } = require('../middlewares/access.middleware');
 const { saveTicket, getTickets, getTicketById, updateTicketStatus, assignTicket, completeTicket } = require('../services/db.service');
 const { sendWhatsAppText } = require('../services/whatsapp.service');
 const { getProviderWhatsAppNumber } = require('../services/provider-client.service');
@@ -34,7 +35,7 @@ router.get('/tickets/:id', async (req, res) => {
  * GET /api/v1/tickets
  * Obtiene la lista de tickets (Dashboard Admin).
  */
-router.get('/tickets', async (req, res) => {
+router.get('/tickets', requireAdminJwt, async (req, res) => {
     try {
         const tickets = await getTickets();
         res.json({
@@ -55,7 +56,7 @@ router.get('/tickets', async (req, res) => {
  * Actualiza el estado de un ticket.
  * Body: { status: 'NUEVO_ESTADO' }
  */
-router.patch('/tickets/:id/status', async (req, res) => {
+router.patch('/tickets/:id/status', requireAdminJwt, async (req, res) => {
     try {
         const { id } = req.params;
         const { status } = req.body;
@@ -152,7 +153,7 @@ router.post('/tickets/:id/assign', async (req, res) => {
  */
 const COMPLETE_MESSAGE_TO_PROVIDER = '¡Felicitaciones por completar el trabajo! 🎉 Para ir armando tu historial financiero en miservicio y destrabar beneficios, ¿cuál fue el monto final que le cobraste al cliente? (Respondeme solo con el número, ej: 15000)';
 
-router.post('/tickets/:id/complete', async (req, res) => {
+router.post('/tickets/:id/complete', requireAdminJwt, async (req, res) => {
     try {
         const id = req.params.id;
         const ticket = await getTicketById(id);
@@ -218,7 +219,7 @@ router.post('/tickets/:id/complete', async (req, res) => {
  * Endpoint para crear tickets desde la plataforma web.
  * Body: { phone_number, category, description, zone, urgency }
  */
-router.post('/tickets', async (req, res) => {
+router.post('/tickets', requireBearerJwt, async (req, res) => {
     try {
         const { phone_number, category, description, zone, urgency } = req.body;
 

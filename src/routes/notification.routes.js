@@ -2,7 +2,7 @@
 
 const router = require('express').Router();
 const { formatWhatsAppNumber, sendWhatsAppText, sendTermsInteractiveMessage, sendMatchResultsMessage } = require('../services/whatsapp.service');
-const { analyzeMessage } = require('../services/ai.service');
+const { analyzeMessage, clearUserSession } = require('../services/ai.service');
 const { saveTicket, getUser, createUser, acceptTerms, CURRENT_TERMS_VERSION, getTicketById, reopenTicketAfterGhost } = require('../services/db.service');
 const { findMatchingProviders } = require('../services/matchmaking.service');
 const { checkAndProcessProviderAmount } = require('../services/ledger.service');
@@ -10,6 +10,7 @@ const { checkAndProcessClientReview } = require('../services/review.service');
 const { getProviderWhatsAppNumber } = require('../services/provider-client.service');
 const { emitCreditEvent } = require('../services/credit.service');
 const { whatsappLimiter } = require('../middlewares/whatsappLimiter.middleware');
+const { requireInternalNotificationKey } = require('../middlewares/access.middleware');
 
 const WEBHOOK_VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN || '';
 const DEBOUNCE_MS = 2_000;
@@ -78,6 +79,7 @@ async function flushBufferedMessages(from) {
                     // Enviar el Magic Link al usuario
                     await sendMatchResultsMessage(metaRecipient, matches.length, ticketId);
                     console.log('[Webhook] Magic Link enviado a WhatsApp.');
+                    clearUserSession(from);
                     return; // Importante: No enviar la respuesta genérica de Gemini si ya enviamos el link
                 } else {
                     console.log('[Matchmaking] No se encontraron profesionales que coincidan exactamente.');
@@ -255,7 +257,7 @@ router.post('/webhook', whatsappLimiter, async (req, res) => {
  * Body: { phoneNumber, workerName, category }
  * Envía al trabajador un mensaje de nuevo interesado en su servicio.
  */
-router.post('/send-whatsapp', async (req, res) => {
+router.post('/send-whatsapp', requireInternalNotificationKey, async (req, res) => {
     try {
         const { phoneNumber, workerName, category } = req.body;
         if (!phoneNumber || !workerName || !category) {

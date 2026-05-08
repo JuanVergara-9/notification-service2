@@ -62,6 +62,9 @@ initGhostingCron();
 const { initCreditScoreCron } = require('./cron/credit-score.cron');
 initCreditScoreCron();
 
+const { initFollowupCron } = require('./cron/followup.cron');
+initFollowupCron();
+
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`notification-service on :${PORT}`);
 });

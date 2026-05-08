@@ -203,4 +203,85 @@ async function sendGhostCheckInteractiveMessage(phoneNumber, ticketId) {
     }
 }
 
-module.exports = { formatWhatsAppNumber, sendWhatsAppText, sendTermsInteractiveMessage, sendMatchResultsMessage, sendGhostCheckInteractiveMessage };
+/**
+ * Envía el follow-up post-contacto directo al cliente.
+ * @param {string} phoneNumber  - Teléfono del cliente.
+ * @param {object} opts
+ * @param {string} opts.clientName   - Nombre del cliente.
+ * @param {string} opts.providerName - Nombre del proveedor.
+ * @param {string} opts.category     - Categoría del servicio.
+ * @param {string} opts.description  - Descripción escrita por el cliente al contactar.
+ * @param {number} opts.days         - Días desde que realizó el contacto.
+ * @param {number} opts.attempt      - Número de intento (1, 2 o 3).
+ */
+async function sendDirectContactFollowup(phoneNumber, { clientName, providerName, category, description, days, attempt }) {
+    const isRecontact = attempt > 1;
+    const intro = isRecontact
+        ? `Hola ${clientName}! Te escribimos de nuevo desde miservicio.`
+        : `Hola ${clientName}! 👋`;
+
+    const contextLine = isRecontact
+        ? `¿Finalmente pudiste hacer el trabajo con ${providerName} para "${description}"?`
+        : `Hace ${days} días contactaste a ${providerName} (${category}) por miservicio para "${description}". ¿Cómo resultó?`;
+
+    const options = isRecontact
+        ? `1️⃣ Sí, ya se realizó\n2️⃣ Seguimos coordinando\n3️⃣ Al final no nos pusimos de acuerdo\n\nRespondé con 1, 2 o 3. (Intento ${attempt} de 3)`
+        : `1️⃣ Sí, el trabajo ya se realizó\n2️⃣ Todavía lo estamos coordinando\n3️⃣ No me contactó\n4️⃣ Al final no nos pusimos de acuerdo\n\nRespondé con 1, 2, 3 o 4.`;
+
+    const body = `${intro}\n\n${contextLine}\n\n${options}`;
+    return sendWhatsAppText(phoneNumber, body);
+}
+
+/**
+ * Pregunta al cliente cuánto cobró el proveedor.
+ * @param {string} phoneNumber
+ * @param {string} providerName
+ */
+async function sendAmountQuestion(phoneNumber, providerName) {
+    const body = `¡Qué bueno! 🙌\n\n¿Sabés cuánto cobró ${providerName}? Respondé solo el número en pesos (ej: 15000).\nSi preferís no decirlo, escribí "no".`;
+    return sendWhatsAppText(phoneNumber, body);
+}
+
+/**
+ * Envía el link para dejar reseña en la página (nunca se pide rating por WA).
+ * @param {string} phoneNumber
+ * @param {string} providerName
+ * @param {number} providerId
+ */
+async function sendReviewLink(phoneNumber, providerName, providerId) {
+    const link = `${FRONTEND_URL}/proveedores/${providerId}?review=1`;
+    const body = `Si quedaste conforme con el trabajo, podés dejarle una reseña a ${providerName} desde la página. Le ayuda mucho a conseguir más clientes 💪\n\n👉 ${link}\n\n¡Gracias por usar miservicio!`;
+    return sendWhatsAppText(phoneNumber, body);
+}
+
+/**
+ * Cierre de conversación cuando el proveedor no contactó (ghosted).
+ * @param {string} phoneNumber
+ */
+async function sendGhostedClosure(phoneNumber) {
+    const body = `Qué pena, lo vamos a tener en cuenta. Gracias por avisarnos.\n\nSi en algún momento necesitás otro profesional, encontralo en ${FRONTEND_URL} 👋`;
+    return sendWhatsAppText(phoneNumber, body);
+}
+
+/**
+ * Cierre de conversación cuando no hubo acuerdo.
+ * @param {string} phoneNumber
+ * @param {string} category
+ */
+async function sendNoAgreementClosure(phoneNumber, category) {
+    const body = `Entendido. Gracias por contarnos.\n\nSi necesitás buscar otra opción, en ${FRONTEND_URL} podés ver más profesionales de ${category} en tu zona 🔍`;
+    return sendWhatsAppText(phoneNumber, body);
+}
+
+module.exports = {
+    formatWhatsAppNumber,
+    sendWhatsAppText,
+    sendTermsInteractiveMessage,
+    sendMatchResultsMessage,
+    sendGhostCheckInteractiveMessage,
+    sendDirectContactFollowup,
+    sendAmountQuestion,
+    sendReviewLink,
+    sendGhostedClosure,
+    sendNoAgreementClosure,
+};

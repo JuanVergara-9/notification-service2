@@ -1,12 +1,13 @@
 'use strict';
 
 const router = require('express').Router();
-const { formatWhatsAppNumber, sendWhatsAppText, sendTermsInteractiveMessage, sendMatchResultsMessage } = require('../services/whatsapp.service');
+const { formatWhatsAppNumber, sendWhatsAppText, sendTermsInteractiveMessage, sendMatchResultsMessage, sendAmountQuestion, sendReviewLink, sendGhostedClosure, sendNoAgreementClosure } = require('../services/whatsapp.service');
 const { analyzeMessage, clearUserSession } = require('../services/ai.service');
 const { saveTicket, getUser, createUser, acceptTerms, CURRENT_TERMS_VERSION, getTicketById, reopenTicketAfterGhost } = require('../services/db.service');
 const { findMatchingProviders } = require('../services/matchmaking.service');
 const { checkAndProcessProviderAmount } = require('../services/ledger.service');
 const { checkAndProcessClientReview } = require('../services/review.service');
+const { checkAndProcessFollowupReply } = require('../services/followup-reply.service');
 const { getProviderWhatsAppNumber } = require('../services/provider-client.service');
 const { emitCreditEvent } = require('../services/credit.service');
 const { whatsappLimiter } = require('../middlewares/whatsappLimiter.middleware');
@@ -173,6 +174,12 @@ router.post('/webhook', whatsappLimiter, async (req, res) => {
             const reviewIntercepted = await checkAndProcessClientReview(from, text);
             if (reviewIntercepted) {
                 console.log('[Webhook] Mensaje interceptado por Review (calificación), no se envía a Gemini.');
+                return;
+            }
+            // --- Interceptor de follow-up de contacto directo ---
+            const followupIntercepted = await checkAndProcessFollowupReply(from, text);
+            if (followupIntercepted) {
+                console.log('[Webhook] Mensaje interceptado por FollowupReply (contacto directo), no se envía a Gemini.');
                 return;
             }
         }

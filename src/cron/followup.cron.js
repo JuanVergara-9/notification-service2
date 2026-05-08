@@ -2,7 +2,6 @@
 
 const cron = require('node-cron');
 const axios = require('axios');
-const dayjs = require('dayjs');
 const { generateInternalToken } = require('../utils/jwt');
 const {
     sendDirectContactFollowup,
@@ -57,7 +56,8 @@ async function processFollowup(ci) {
     const providerName = ci.provider_name || 'el profesional';
     const category    = ci.category     || 'el servicio';
     const description = ci.description  || 'tu consulta';
-    const days        = dayjs().diff(dayjs(ci.created_at), 'day') || 3;
+    const msPerDay    = 1000 * 60 * 60 * 24;
+    const days        = Math.floor((Date.now() - new Date(ci.created_at).getTime()) / msPerDay) || 3;
     const attempt     = (ci.followup_count || 0) + 1;
 
     const result = await sendDirectContactFollowup(phone, {

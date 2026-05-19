@@ -93,6 +93,33 @@ const initDB = async () => {
         `;
         await pool.query(checkCols);
 
+        // ── Chat Logs Table (WhatsApp message audit trail) ──
+        const chatLogsTables = `
+            CREATE TABLE IF NOT EXISTS chat_logs (
+                id SERIAL PRIMARY KEY,
+                phone_number VARCHAR(50) NOT NULL,
+                sender_role VARCHAR(10) NOT NULL CHECK (sender_role IN ('USER','BOT','ADMIN')),
+                message_body TEXT NOT NULL,
+                ticket_id INTEGER,
+                metadata JSONB DEFAULT '{}',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_chat_logs_phone ON chat_logs (phone_number, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_chat_logs_ticket ON chat_logs (ticket_id) WHERE ticket_id IS NOT NULL;
+        `;
+        await pool.query(chatLogsTables);
+
+        // is_bot_paused column on users table
+        const botPauseCol = `
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='is_bot_paused') THEN
+                    ALTER TABLE users ADD COLUMN is_bot_paused BOOLEAN DEFAULT false;
+                END IF;
+            END $$;
+        `;
+        await pool.query(botPauseCol);
+        console.log('[DB] Tabla "chat_logs" y columna "is_bot_paused" verificadas/creadas con éxito.');
+
         // ── Credit History Tables (Fintech Infrastructure) ──
         const creditTables = `
             CREATE TABLE IF NOT EXISTS credit_events (
@@ -991,6 +1018,94 @@ async function getWorkerAchievementCounts(providerId) {
     }
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// Chat Logs – DB operations (WhatsApp message audit trail)
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function saveChatLog(phoneNumber, senderRole, messageBody, { ticketId, metadata } = {}) {
+    const query = `
+        INSERT INTO chat_logs (phone_number, sender_role, message_body, ticket_id, metadata)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING *;
+    `;
+    try {
+        const res = await pool.query(query, [
+            phoneNumber,
+            senderRole,
+            messageBody,
+            ticketId ?? null,
+            JSON.stringify(metadata || {}),
+        ]);
+        return res.rows[0];
+    } catch (err) {
+        console.error('[ChatLogs] Error al guardar mensaje:', err.message);
+    }
+}
+
+async function getChatLogsByPhone(phoneNumber, { limit = 100, offset = 0 } = {}) {
+    const query = `
+        SELECT * FROM chat_logs
+        WHERE phone_number = $1
+        ORDER BY created_at ASC
+        LIMIT $2 OFFSET $3;
+    `;
+    try {
+        const res = await pool.query(query, [phoneNumber, limit, offset]);
+        return res.rows;
+    } catch (err) {
+        console.error('[ChatLogs] Error al obtener mensajes:', err.message);
+        throw err;
+    }
+}
+
+async function getConversationsList({ limit = 50, offset = 0 } = {}) {
+    const query = `
+        SELECT
+            cl.phone_number,
+            MAX(cl.created_at) AS last_message_at,
+            COUNT(*)::int AS message_count,
+            (SELECT message_body FROM chat_logs c2 WHERE c2.phone_number = cl.phone_number ORDER BY c2.created_at DESC LIMIT 1) AS last_message,
+            (SELECT sender_role FROM chat_logs c2 WHERE c2.phone_number = cl.phone_number ORDER BY c2.created_at DESC LIMIT 1) AS last_sender,
+            u.is_bot_paused
+        FROM chat_logs cl
+        LEFT JOIN users u ON u.phone_number = cl.phone_number
+        GROUP BY cl.phone_number, u.is_bot_paused
+        ORDER BY last_message_at DESC
+        LIMIT $1 OFFSET $2;
+    `;
+    try {
+        const res = await pool.query(query, [limit, offset]);
+        return res.rows;
+    } catch (err) {
+        console.error('[ChatLogs] Error al listar conversaciones:', err.message);
+        throw err;
+    }
+}
+
+async function setBotPaused(phoneNumber, paused) {
+    const query = `
+        UPDATE users SET is_bot_paused = $1 WHERE phone_number = $2 RETURNING *;
+    `;
+    try {
+        const res = await pool.query(query, [!!paused, phoneNumber]);
+        return res.rows[0] || null;
+    } catch (err) {
+        console.error('[ChatLogs] Error al cambiar is_bot_paused:', err.message);
+        throw err;
+    }
+}
+
+async function isBotPaused(phoneNumber) {
+    const query = 'SELECT is_bot_paused FROM users WHERE phone_number = $1;';
+    try {
+        const res = await pool.query(query, [phoneNumber]);
+        return res.rows[0]?.is_bot_paused === true;
+    } catch (err) {
+        console.error('[ChatLogs] Error al verificar is_bot_paused:', err.message);
+        return false;
+    }
+}
+
 module.exports = {
     getBehavioralMetrics,
     getActiveWorkersList,
@@ -1030,5 +1145,11 @@ module.exports = {
     getWorkerMonthlyEarnings,
     getWorkerAllTimeStats,
     getWorkerBestMonth,
-    getWorkerAchievementCounts
+    getWorkerAchievementCounts,
+    // Chat Logs
+    saveChatLog,
+    getChatLogsByPhone,
+    getConversationsList,
+    setBotPaused,
+    isBotPaused
 };

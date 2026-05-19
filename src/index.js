@@ -49,6 +49,7 @@ app.get('/readyz', (_req, res) => res.json({ ok: true }));
 app.use('/api/v1/notifications', require('./routes/notification.routes'));
 app.use('/api/v1', require('./routes/ticket.routes'));
 app.use('/api/v1/metrics', require('./routes/metrics.routes'));
+app.use('/api/v1/admin/chats', require('./routes/chat.routes'));
 
 // Internal endpoint for credit event ingestion from other microservices
 const { ingestCreditEvent } = require('./controllers/metrics.controller');

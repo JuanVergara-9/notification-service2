@@ -8,7 +8,14 @@
 
 const axios = require('axios');
 
-// Base de la API de Graph (Meta); v18.0 es la versión usada para mensajes.
+let _saveChatLog;
+function getSaveChatLog() {
+    if (!_saveChatLog) {
+        try { _saveChatLog = require('./db.service').saveChatLog; } catch { _saveChatLog = null; }
+    }
+    return _saveChatLog;
+}
+
 const META_GRAPH_BASE = 'https://graph.facebook.com/v18.0';
 const token = process.env.META_WA_TOKEN;
 const phoneNumberId = process.env.META_WA_PHONE_NUMBER_ID;
@@ -46,7 +53,7 @@ function formatWhatsAppNumber(phone) {
  * @param {string} body - Cuerpo del mensaje (texto plano)
  * @returns {Promise<{ success: boolean, messageId?: string, error?: string }>}
  */
-async function sendWhatsAppText(phoneNumber, body) {
+async function sendWhatsAppText(phoneNumber, body, opts = {}) {
     if (!token || !phoneNumberId) {
         return { success: false, error: 'META_WA_TOKEN or META_WA_PHONE_NUMBER_ID not configured' };
     }
@@ -78,6 +85,13 @@ async function sendWhatsAppText(phoneNumber, body) {
             }
         );
         const messageId = data?.messages?.[0]?.id;
+        if (!opts.skipLog) {
+            const save = getSaveChatLog();
+            if (save) {
+                const dbPhone = formattedPhone.startsWith('549') ? formattedPhone : '549' + formattedPhone.replace(/^54/, '');
+                save(dbPhone, 'BOT', body).catch(e => console.error('[ChatLogs] save BOT error:', e.message));
+            }
+        }
         return { success: true, messageId };
     } catch (err) {
         const message = err.response?.data?.error?.message || err.message;

@@ -3,7 +3,7 @@
 const router = require('express').Router();
 const { formatWhatsAppNumber, sendWhatsAppText, sendTermsInteractiveMessage, sendMatchResultsMessage, sendAmountQuestion, sendReviewLink, sendGhostedClosure, sendNoAgreementClosure } = require('../services/whatsapp.service');
 const { analyzeMessage, clearUserSession } = require('../services/ai.service');
-const { saveTicket, getUser, createUser, acceptTerms, CURRENT_TERMS_VERSION, getTicketById, reopenTicketAfterGhost } = require('../services/db.service');
+const { saveTicket, getUser, createUser, acceptTerms, CURRENT_TERMS_VERSION, getTicketById, reopenTicketAfterGhost, saveChatLog, isBotPaused } = require('../services/db.service');
 const { findMatchingProviders } = require('../services/matchmaking.service');
 const { checkAndProcessProviderAmount } = require('../services/ledger.service');
 const { checkAndProcessClientReview } = require('../services/review.service');
@@ -163,6 +163,10 @@ router.post('/webhook', whatsappLimiter, async (req, res) => {
 
         console.log('[Webhook] Mensaje recibido.', { from, type: first.type });
 
+        // Persist every inbound message (text or interactive button label)
+        const logBody = text || (interactive?.button_reply?.title) || `[${first.type}]`;
+        saveChatLog(from, 'USER', logBody).catch(e => console.error('[ChatLogs] save USER error:', e.message));
+
         // --- Interceptor Shadow Ledger: captura respuesta del profesional con GMV (evita Gemini) ---
         if (first.type === 'text' && text) {
             const intercepted = await checkAndProcessProviderAmount(from, text);
@@ -252,6 +256,13 @@ router.post('/webhook', whatsappLimiter, async (req, res) => {
         }
 
         // --- FIN Legal Gatekeeper ---
+
+        // Si el admin pausó el bot para este usuario, no enviar a Gemini
+        const paused = await isBotPaused(from);
+        if (paused) {
+            console.log('[Webhook] Bot pausado para', from, '— mensaje NO enviado a Gemini (esperando admin).');
+            return;
+        }
 
         enqueueDebouncedMessage(from, text);
     } catch (err) {

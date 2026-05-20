@@ -7,14 +7,7 @@
  */
 
 const axios = require('axios');
-
-let _saveChatLog;
-function getSaveChatLog() {
-    if (!_saveChatLog) {
-        try { _saveChatLog = require('./db.service').saveChatLog; } catch { _saveChatLog = null; }
-    }
-    return _saveChatLog;
-}
+const { saveChatLog } = require('./db.service');
 
 const META_GRAPH_BASE = 'https://graph.facebook.com/v18.0';
 const token = process.env.META_WA_TOKEN;
@@ -85,12 +78,9 @@ async function sendWhatsAppText(phoneNumber, body, opts = {}) {
             }
         );
         const messageId = data?.messages?.[0]?.id;
-        if (!opts.skipLog) {
-            const save = getSaveChatLog();
-            if (save) {
-                const dbPhone = formattedPhone.startsWith('549') ? formattedPhone : '549' + formattedPhone.replace(/^54/, '');
-                save(dbPhone, 'BOT', body).catch(e => console.error('[ChatLogs] save BOT error:', e.message));
-            }
+        if (!opts.skipLog && typeof saveChatLog === 'function') {
+            const dbPhone = formattedPhone.startsWith('549') ? formattedPhone : '549' + formattedPhone.replace(/^54/, '');
+            saveChatLog(dbPhone, 'BOT', body).catch(e => console.error('[ChatLogs] save BOT error:', e.message));
         }
         return { success: true, messageId };
     } catch (err) {

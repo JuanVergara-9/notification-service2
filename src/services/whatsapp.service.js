@@ -7,7 +7,13 @@
  */
 
 const axios = require('axios');
-const { saveChatLog } = require('./db.service');
+
+let saveChatLog;
+try {
+    saveChatLog = require('./db.service').saveChatLog;
+} catch (e) {
+    console.warn('[whatsapp.service] Could not import saveChatLog:', e.message);
+}
 
 const META_GRAPH_BASE = 'https://graph.facebook.com/v18.0';
 const token = process.env.META_WA_TOKEN;

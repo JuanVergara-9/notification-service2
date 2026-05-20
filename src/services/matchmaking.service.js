@@ -26,32 +26,83 @@ function getProviderBaseUrl() {
  * Las categorías en DB son: plomeria, gasistas, electricidad, jardineria, etc. (ver seeders).
  */
 const CATEGORY_SLUG_MAP = {
+  // Electricidad
   electricista: 'electricidad',
   electricidad: 'electricidad',
+  'electricista matriculado': 'electricidad',
+  // Plomería
   plomero: 'plomeria',
   plomería: 'plomeria',
   plomeria: 'plomeria',
+  // Gasistas
   gasista: 'gasistas',
   gasistas: 'gasistas',
+  // Jardinería
   jardinero: 'jardineria',
   jardinería: 'jardineria',
   jardineria: 'jardineria',
+  // Carpintería
   carpintero: 'carpinteria',
   carpintería: 'carpinteria',
   carpinteria: 'carpinteria',
+  // Pintura
   pintor: 'pintura',
   pintura: 'pintura',
+  // Piletas
   pileta: 'mantenimiento-limpieza-piletas',
   piletas: 'mantenimiento-limpieza-piletas',
+  'mantenimiento de piletas': 'mantenimiento-limpieza-piletas',
+  'limpieza de piletas': 'mantenimiento-limpieza-piletas',
+  // Reparación de electrodomésticos / Técnicos
   electrodomésticos: 'reparacion-electrodomesticos',
-  electrodomesticos: 'reparacion-electrodomesticos'
+  electrodomesticos: 'reparacion-electrodomesticos',
+  'reparación de electrodomésticos': 'reparacion-electrodomesticos',
+  'reparacion de electrodomesticos': 'reparacion-electrodomesticos',
+  técnico: 'reparacion-electrodomesticos',
+  tecnico: 'reparacion-electrodomesticos',
+  'técnico en electrodomésticos': 'reparacion-electrodomesticos',
+  'tecnico en electrodomesticos': 'reparacion-electrodomesticos',
+  'service de electrodomésticos': 'reparacion-electrodomesticos',
+  'service de electrodomesticos': 'reparacion-electrodomesticos',
+  service: 'reparacion-electrodomesticos',
+  heladera: 'reparacion-electrodomesticos',
+  lavarropas: 'reparacion-electrodomesticos',
+  lavarropa: 'reparacion-electrodomesticos',
+  lavarropa: 'reparacion-electrodomesticos',
+  secarropas: 'reparacion-electrodomesticos',
+  microondas: 'reparacion-electrodomesticos',
+  horno: 'reparacion-electrodomesticos',
+  aire: 'reparacion-electrodomesticos',
+  'aire acondicionado': 'reparacion-electrodomesticos',
+  refrigeración: 'reparacion-electrodomesticos',
+  refrigeracion: 'reparacion-electrodomesticos',
 };
 
 function normalizeCategoryForApi(category) {
   if (!category || typeof category !== 'string') return { categoryName: category || '', categorySlug: undefined };
-  const key = category.trim().toLowerCase();
-  const slug = CATEGORY_SLUG_MAP[key];
-  if (slug) return { categoryName: undefined, categorySlug: slug };
+
+  // Normalizar: minúsculas, sin tildes, trim
+  const raw = category.trim().toLowerCase();
+  const stripped = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+  // 1. Exact match (con y sin tildes)
+  if (CATEGORY_SLUG_MAP[raw]) return { categoryName: undefined, categorySlug: CATEGORY_SLUG_MAP[raw] };
+  if (CATEGORY_SLUG_MAP[stripped]) return { categoryName: undefined, categorySlug: CATEGORY_SLUG_MAP[stripped] };
+
+  // 2. Partial / contains match: si alguna clave del mapa está contenida en la categoría o viceversa
+  for (const [key, slug] of Object.entries(CATEGORY_SLUG_MAP)) {
+    const keyStripped = key.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (stripped.includes(keyStripped) || keyStripped.includes(stripped)) {
+      return { categoryName: undefined, categorySlug: slug };
+    }
+  }
+
+  // 3. Keyword match para electrodomésticos/técnicos
+  const electroKeywords = ['heladera', 'lavarropa', 'lavarropas', 'secarropa', 'microondas', 'horno', 'aire acondicionado', 'refriger', 'freezer', 'termotanque', 'calefon', 'anafe', 'cocina', 'electrodomestico', 'service', 'tecnico'];
+  if (electroKeywords.some(kw => stripped.includes(kw))) {
+    return { categoryName: undefined, categorySlug: 'reparacion-electrodomesticos' };
+  }
+
   return { categoryName: category.trim(), categorySlug: undefined };
 }
 

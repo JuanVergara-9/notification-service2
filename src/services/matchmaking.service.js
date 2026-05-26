@@ -72,29 +72,40 @@ const CATEGORY_SLUG_MAP = {
   piletas: 'mantenimiento-limpieza-piletas',
   'mantenimiento de piletas': 'mantenimiento-limpieza-piletas',
   'limpieza de piletas': 'mantenimiento-limpieza-piletas',
-  // Reparación de electrodomésticos / Técnicos
+  // Reparación de electrodomésticos
   electrodomésticos: 'reparacion-electrodomesticos',
   electrodomesticos: 'reparacion-electrodomesticos',
   'reparación de electrodomésticos': 'reparacion-electrodomesticos',
   'reparacion de electrodomesticos': 'reparacion-electrodomesticos',
-  técnico: 'reparacion-electrodomesticos',
-  tecnico: 'reparacion-electrodomesticos',
   'técnico en electrodomésticos': 'reparacion-electrodomesticos',
   'tecnico en electrodomesticos': 'reparacion-electrodomesticos',
   'service de electrodomésticos': 'reparacion-electrodomesticos',
   'service de electrodomesticos': 'reparacion-electrodomesticos',
-  service: 'reparacion-electrodomesticos',
   heladera: 'reparacion-electrodomesticos',
   lavarropas: 'reparacion-electrodomesticos',
-  lavarropa: 'reparacion-electrodomesticos',
   lavarropa: 'reparacion-electrodomesticos',
   secarropas: 'reparacion-electrodomesticos',
   microondas: 'reparacion-electrodomesticos',
   horno: 'reparacion-electrodomesticos',
-  aire: 'reparacion-electrodomesticos',
-  'aire acondicionado': 'reparacion-electrodomesticos',
-  refrigeración: 'reparacion-electrodomesticos',
-  refrigeracion: 'reparacion-electrodomesticos',
+  freezer: 'reparacion-electrodomesticos',
+  termotanque: 'reparacion-electrodomesticos',
+  calefón: 'reparacion-electrodomesticos',
+  calefon: 'reparacion-electrodomesticos',
+  // Aire acondicionado
+  'aire acondicionado': 'aire-acondicionado',
+  'aire-acondicionado': 'aire-acondicionado',
+  aire: 'aire-acondicionado',
+  split: 'aire-acondicionado',
+  splits: 'aire-acondicionado',
+  'frío calor': 'aire-acondicionado',
+  'frio calor': 'aire-acondicionado',
+  climatización: 'aire-acondicionado',
+  climatizacion: 'aire-acondicionado',
+  'carga de gas': 'aire-acondicionado',
+  refrigeración: 'aire-acondicionado',
+  refrigeracion: 'aire-acondicionado',
+  'técnico en aire': 'aire-acondicionado',
+  'tecnico en aire': 'aire-acondicionado',
 };
 
 function normalizeCategoryForApi(category) {
@@ -116,9 +127,14 @@ function normalizeCategoryForApi(category) {
     }
   }
 
-  // 3. Keyword match para electrodomésticos/técnicos
-  const electroKeywords = ['heladera', 'lavarropa', 'lavarropas', 'secarropa', 'microondas', 'horno', 'aire acondicionado', 'refriger', 'freezer', 'termotanque', 'calefon', 'anafe', 'cocina', 'electrodomestico', 'service', 'tecnico'];
-  if (electroKeywords.some(kw => stripped.includes(kw))) {
+  // 3. Keyword match por tipo de equipo
+  const acKeywords = ['aire acondicionado', 'split', 'climatiz', 'frio calor', 'carga de gas', 'refriger'];
+  if (acKeywords.some((kw) => stripped.includes(kw))) {
+    return { categoryName: undefined, categorySlug: 'aire-acondicionado' };
+  }
+
+  const electroKeywords = ['heladera', 'lavarropa', 'lavarropas', 'secarropa', 'microondas', 'horno', 'freezer', 'termotanque', 'calefon', 'anafe', 'cocina', 'electrodomestico'];
+  if (electroKeywords.some((kw) => stripped.includes(kw))) {
     return { categoryName: undefined, categorySlug: 'reparacion-electrodomesticos' };
   }
 

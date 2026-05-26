@@ -37,7 +37,7 @@ Categorías válidas (usá EXACTAMENTE uno de estos nombres en "category"):
 - Plomería
 - Gasistas
 - Jardinería
-- Carpintería
+- Metalurgía
 - Pintura
 - Mantenimiento y limpieza de piletas
 - Reparación de electrodomésticos
@@ -48,7 +48,7 @@ Mapeo de sinónimos (lo que dice el cliente → categoría correcta):
 - "plomero", "caño", "cañería" → "Plomería"
 - "gasista", "gas" → "Gasistas"
 - "jardinero", "jardín", "pasto", "poda" → "Jardinería"
-- "carpintero", "mueble", "madera" → "Carpintería"
+- "metalúrgico", "metalurgico", "herrero", "herrería", "soldador", "soldadura", "reja", "portón", "estructura metálica", "hierro", "acero" → "Metalurgía"
 - "pintor" → "Pintura"
 - "pileta", "piscina" → "Mantenimiento y limpieza de piletas"
 

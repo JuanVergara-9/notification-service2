@@ -96,55 +96,62 @@ async function sendWhatsAppText(phoneNumber, body, opts = {}) {
     }
 }
 
+/** Límites Meta Cloud API: título de botón reply ≤ 20 caracteres, footer ≤ 60, body ≤ 1024. */
+const GATEKEEPER_BODY =
+    '¡Hola! Para usar miservicio, confirmá que aceptás nuestros Términos y Políticas actualizados (v1.1).';
+const GATEKEEPER_FOOTER = 'Ver: miservicio.ar/legal';
+
 /**
  * Envía un mensaje interactivo con botones para la aceptación de Términos y Condiciones.
  * @param {string} phoneNumber - Número del destinatario.
  */
 async function sendTermsInteractiveMessage(phoneNumber) {
     if (!token || !phoneNumberId) {
+        console.error('[Gatekeeper Error] Credenciales Meta no configuradas.');
         return { success: false, error: 'META_WA_TOKEN or META_WA_PHONE_NUMBER_ID not configured' };
     }
 
     const formattedPhone = formatWhatsAppNumber(phoneNumber);
     if (!formattedPhone) {
+        console.error('[Gatekeeper Error] Número inválido:', phoneNumber);
         return { success: false, error: 'Invalid phone number' };
     }
     const to = formattedPhone.startsWith('549') ? '54' + formattedPhone.slice(3) : formattedPhone;
 
+    const payload = {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to,
+        type: 'interactive',
+        interactive: {
+            type: 'button',
+            body: { text: GATEKEEPER_BODY },
+            footer: { text: GATEKEEPER_FOOTER },
+            action: {
+                buttons: [
+                    { type: 'reply', reply: { id: 'accept_terms', title: 'Acepto' } },
+                    { type: 'reply', reply: { id: 'reject_terms', title: 'Cancelar' } }
+                ]
+            }
+        }
+    };
+
     try {
         const url = `${META_GRAPH_BASE}/${phoneNumberId}/messages`;
-        const { data } = await axios.post(
-            url,
-            {
-                messaging_product: "whatsapp",
-                to,
-                type: "interactive",
-                interactive: {
-                    type: "button",
-                    body: { 
-                        text: "¡Hola! Para conectarte con los mejores profesionales, por favor confirmá que aceptás nuestros nuevos Términos y Políticas actualizados (v1.1): www.miservicio.ar/legal" 
-                    },
-                    action: {
-                        buttons: [
-                            { "type": "reply", "reply": { "id": "accept_terms", "title": "✅ Acepto" } },
-                            { "type": "reply", "reply": { "id": "reject_terms", "title": "❌ Cancelar" } }
-                        ]
-                    }
-                }
+        const { data } = await axios.post(url, payload, {
+            headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json'
             },
-            {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                timeout: 15_000
-            }
-        );
-        return { success: true, messageId: data?.messages?.[0]?.id };
+            timeout: 15_000
+        });
+        const messageId = data?.messages?.[0]?.id;
+        console.log('[Gatekeeper] Mensaje interactivo enviado a Meta.', { to, messageId });
+        return { success: true, messageId };
     } catch (err) {
+        console.error('[Gatekeeper Error] Fallo al enviar a Meta:', err.response?.data || err.message);
         const message = err.response?.data?.error?.message || err.message;
-        console.error('[WhatsApp] interactive send error:', message);
-        return { success: false, error: message };
+        return { success: false, error: message, metaError: err.response?.data };
     }
 }
 

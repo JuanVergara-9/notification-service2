@@ -247,11 +247,30 @@ router.post('/webhook', whatsappLimiter, async (req, res) => {
         if (!user) {
             console.log('[Webhook] Usuario nuevo detectado, creando registro...', from);
             user = await createUser(from);
+            if (!user) {
+                user = await getUser(from);
+            }
+        }
+
+        if (!user) {
+            console.error('[Webhook] No se pudo obtener/crear usuario para gatekeeper.', { from });
+            return;
         }
 
         if (!user.terms_accepted || user.terms_version !== CURRENT_TERMS_VERSION) {
             console.log('[Webhook] Usuario sin términos aceptados o versión antigua, enviando gatekeeper...', { from, current: CURRENT_TERMS_VERSION, userVer: user.terms_version });
-            await sendTermsInteractiveMessage(from);
+            try {
+                const gatekeeperResult = await sendTermsInteractiveMessage(from);
+                if (!gatekeeperResult.success) {
+                    console.error('[Gatekeeper] Envío fallido (respuesta de servicio).', {
+                        from,
+                        error: gatekeeperResult.error,
+                        metaError: gatekeeperResult.metaError
+                    });
+                }
+            } catch (gatekeeperErr) {
+                console.error('[Gatekeeper] Excepción inesperada al enviar términos:', gatekeeperErr.message);
+            }
             return; // Frena el flujo, NO pasa a Gemini
         }
 
